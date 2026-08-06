@@ -100,6 +100,14 @@ describe("App", () => {
     expect(await screen.findByText(/Round 1 \/ 12/)).toBeInTheDocument();
   });
 
+  it("returns from an active game to the setup screen for a new game", async () => {
+    mockFetch([baseState()]);
+    render(<App />);
+    await screen.findByText(/Round 1 \/ 12/);
+    await userEvent.click(screen.getByRole("button", { name: "New game" }));
+    expect(screen.getByRole("button", { name: "ゲーム開始" })).toBeInTheDocument();
+  });
+
   it("sends take, place and build actions from the controls", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

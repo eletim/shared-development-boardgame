@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { RotateCcw, Undo2 } from "lucide-react";
+import { RotateCcw, Undo2, UserPlus } from "lucide-react";
 import {
   cubeColors,
   type CubeColor,
@@ -112,6 +112,10 @@ export const App = () => {
 
   const reset = async () => applyResponse(await api("/api/game/reset", {}));
   const undo = async () => applyResponse(await api("/api/game/undo", {}));
+  const newGame = () => {
+    setState(null);
+    setError("");
+  };
 
   const confirmTake = () => {
     if (!state?.currentPlayerId) return;
@@ -193,6 +197,9 @@ export const App = () => {
           <strong>{state.currentPlayerName ?? "終了"}</strong>
         </div>
         <div className="icon-actions">
+          <button aria-label="New game" onClick={newGame}>
+            <UserPlus size={18} />
+          </button>
           <button aria-label="Undo" onClick={undo} disabled={!state.legal.canUndo}>
             <Undo2 size={18} />
           </button>
