@@ -52,6 +52,22 @@ describe("board definition", () => {
           intersection.adjacentAreaIds.length >= 1 && intersection.adjacentAreaIds.length <= 3
       )
     ).toBe(true);
+    expect(board.intersections.filter((intersection) => intersection.adjacentAreaIds.length === 3)).toHaveLength(6);
+    expect(board.intersections.filter((intersection) => intersection.adjacentAreaIds.length === 2)).toHaveLength(6);
+    expect(board.intersections.filter((intersection) => intersection.adjacentAreaIds.length === 1)).toHaveLength(12);
+    expect(
+      board.intersections.some(
+        (intersection) =>
+          intersection.adjacentAreaIds.join(",") ===
+          "area-center,area-northeast,area-northwest"
+      )
+    ).toBe(true);
+    expect(
+      board.intersections.some(
+        (intersection) =>
+          intersection.adjacentAreaIds.join(",") === "area-center,area-east,area-northeast"
+      )
+    ).toBe(true);
   });
 });
 

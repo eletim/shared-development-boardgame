@@ -73,6 +73,18 @@ export const App = () => {
   const selectedIntersection = state?.intersections.find(
     (intersection) => intersection.id === buildIntersectionId
   );
+  const isActive = state?.status === "active";
+  const placeTotal = cubeColors.reduce((total, color) => total + placeCubes[color], 0);
+  const selectedPlaceAreaIsLegal =
+    Boolean(placeAreaId) && Boolean(state?.legal.placeableAreaIds.includes(placeAreaId));
+  const legalBuildByIntersectionId = new Map(
+    state?.legal.buildableIntersections.map((option) => [option.intersectionId, option]) ?? []
+  );
+  const selectedBuildOption = buildIntersectionId
+    ? legalBuildByIntersectionId.get(buildIntersectionId)
+    : undefined;
+  const selectedBuildIsLegal =
+    Boolean(selectedBuildOption) && selectedBuildOption?.missingColors.length === 0;
 
   const selectedIntersectionAreas = useMemo(() => {
     if (!state || !selectedIntersection) return [];
@@ -266,14 +278,22 @@ export const App = () => {
                   <select value={placeAreaId} onChange={(event) => setPlaceAreaId(event.target.value)}>
                     <option value="">選択</option>
                     {state.areas.map((area) => (
-                      <option key={area.id} value={area.id}>
+                      <option
+                        key={area.id}
+                        value={area.id}
+                        disabled={!state.legal.placeableAreaIds.includes(area.id)}
+                      >
                         {area.label} {area.cubeTotal}/{state.areaCapacity}
                       </option>
                     ))}
                   </select>
                 </label>
                 <CubeInputs counts={placeCubes} setCounts={setPlaceCubes} maxByColor={currentPlayer?.hand ?? emptyCounts()} />
-                <button className="primary" onClick={confirmPlace} disabled={!placeAreaId}>
+                <button
+                  className="primary"
+                  onClick={confirmPlace}
+                  disabled={!isActive || !selectedPlaceAreaIsLegal || placeTotal < 1 || placeTotal > 3}
+                >
                   確定
                 </button>
               </div>
@@ -293,11 +313,19 @@ export const App = () => {
                     <option value="">選択</option>
                     {state.intersections
                       .filter((intersection) => !intersection.city)
-                      .map((intersection) => (
-                        <option key={intersection.id} value={intersection.id}>
+                      .map((intersection) => {
+                        const option = legalBuildByIntersectionId.get(intersection.id);
+                        const missing = option?.missingColors ?? cubeColors;
+                        return (
+                        <option
+                          key={intersection.id}
+                          value={intersection.id}
+                          disabled={missing.length > 0}
+                        >
                           {intersection.id}
                         </option>
-                      ))}
+                      );
+                      })}
                   </select>
                 </label>
                 {selectedIntersection ? (
@@ -323,7 +351,11 @@ export const App = () => {
                 <button
                   className="primary"
                   onClick={confirmBuild}
-                  disabled={!buildIntersectionId || cubeColors.some((color) => !payment[color])}
+                  disabled={
+                    !isActive ||
+                    !selectedBuildIsLegal ||
+                    cubeColors.some((color) => !payment[color])
+                  }
                 >
                   確定
                 </button>
@@ -432,10 +464,12 @@ const Board = ({
   onAreaSelect: (id: string) => void;
   onIntersectionSelect: (id: string) => void;
 }) => {
-  const minX = Math.min(...state.areas.map((area) => area.x)) - 130;
-  const maxX = Math.max(...state.areas.map((area) => area.x)) + 130;
-  const minY = Math.min(...state.areas.map((area) => area.y)) - 120;
-  const maxY = Math.max(...state.areas.map((area) => area.y)) + 120;
+  const xCoordinates = [...state.areas.map((area) => area.x), ...state.intersections.map((item) => item.x)];
+  const yCoordinates = [...state.areas.map((area) => area.y), ...state.intersections.map((item) => item.y)];
+  const minX = Math.min(...xCoordinates) - 130;
+  const maxX = Math.max(...xCoordinates) + 130;
+  const minY = Math.min(...yCoordinates) - 130;
+  const maxY = Math.max(...yCoordinates) + 130;
 
   return (
     <section className="board-panel" aria-label="盤面">
@@ -445,7 +479,10 @@ const Board = ({
             const angle = ((30 + index * 60) * Math.PI) / 180;
             return `${area.x + 86 * Math.cos(angle)},${area.y + 86 * Math.sin(angle)}`;
           }).join(" ");
-          const selectable = mode === "place" && state.legal.placeableAreaIds.includes(area.id);
+          const selectable =
+            state.status === "active" &&
+            mode === "place" &&
+            state.legal.placeableAreaIds.includes(area.id);
           return (
             <g key={area.id}>
               <polygon
@@ -474,7 +511,8 @@ const Board = ({
           const legalBuild = state.legal.buildableIntersections.find(
             (option) => option.intersectionId === intersection.id && option.missingColors.length === 0
           );
-          const selectable = mode === "build" && !intersection.city;
+          const selectable =
+            state.status === "active" && mode === "build" && !intersection.city && Boolean(legalBuild);
           return (
             <g
               key={intersection.id}
