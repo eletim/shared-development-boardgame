@@ -1,0 +1,18 @@
+{
+  "name": "@sdb/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "HOST=127.0.0.1 PORT=${SERVER_PORT:-3000} tsx watch src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts"
+  },
+  "dependencies": {
+    "@sdb/game-core": "workspace:*",
+    "@sdb/protocol": "workspace:*",
+    "fastify": "^5.1.0"
+  }
+}
