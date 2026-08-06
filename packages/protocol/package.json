@@ -1,0 +1,13 @@
+{
+  "name": "@sdb/protocol",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "test": "vitest run --passWithNoTests",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src --ext .ts"
+  }
+}
