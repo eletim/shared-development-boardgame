@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { RotateCcw, Undo2, UserPlus } from "lucide-react";
 import {
+  cardDefinitions,
+  type CardInstance,
   cubeColors,
   type CubeColor,
   type GameAction,
@@ -9,7 +11,7 @@ import {
   type PublicGameState,
 } from "@sdb/protocol";
 
-type Mode = "take" | "place" | "build" | "pass";
+type Mode = "take" | "place" | "build" | "score" | "pass";
 
 const colorLabels: Record<CubeColor, string> = {
   red: "赤",
@@ -38,6 +40,8 @@ const formatCubes = (cubes: PartialCubeCounts): string =>
     .map((color) => `${colorLabels[color]}${cubes[color]}`)
     .join(" ");
 
+const cardLabel = (card: CardInstance): string => cardDefinitions[card.kind].name;
+
 export const App = () => {
   const [state, setState] = useState<PublicGameState | null>(null);
   const [error, setError] = useState<string>("");
@@ -53,6 +57,14 @@ export const App = () => {
     blue: "",
     yellow: "",
   });
+  const [accelerateCardId, setAccelerateCardId] = useState("");
+  const [scoreCardId, setScoreCardId] = useState("");
+  const [waivedColor, setWaivedColor] = useState<CubeColor | "">("");
+  const [redevelopmentMove, setRedevelopmentMove] = useState({
+    color: "red" as CubeColor,
+    fromAreaId: "",
+    toAreaId: "",
+  });
 
   useEffect(() => {
     api("/api/game").then((data) => {
@@ -67,6 +79,10 @@ export const App = () => {
     setPlaceCubes(emptyCounts());
     setBuildIntersectionId("");
     setPayment({ red: "", blue: "", yellow: "" });
+    setAccelerateCardId("");
+    setScoreCardId("");
+    setWaivedColor("");
+    setRedevelopmentMove({ color: "red", fromAreaId: "", toAreaId: "" });
   }, [state?.currentPlayerId, state?.round]);
 
   const currentPlayer = state?.players.find((player) => player.id === state.currentPlayerId) ?? null;
@@ -75,6 +91,12 @@ export const App = () => {
   );
   const isActive = state?.status === "active";
   const placeTotal = cubeColors.reduce((total, color) => total + placeCubes[color], 0);
+  const selectedPlaceArea = state?.areas.find((area) => area.id === placeAreaId);
+  const selectedAccelerator = currentPlayer?.cards.find((card) => card.id === accelerateCardId);
+  const placeLimit = selectedPlaceArea
+    ? selectedPlaceArea.currentPlacementLimit +
+      (selectedAccelerator?.kind === "focused-development" ? 1 : 0)
+    : 3;
   const selectedPlaceAreaIsLegal =
     Boolean(placeAreaId) && Boolean(state?.legal.placeableAreaIds.includes(placeAreaId));
   const legalBuildByIntersectionId = new Map(
@@ -85,6 +107,7 @@ export const App = () => {
     : undefined;
   const selectedBuildIsLegal =
     Boolean(selectedBuildOption) && selectedBuildOption?.missingColors.length === 0;
+  const buildUsesUrbanization = selectedAccelerator?.kind === "urbanization";
 
   const selectedIntersectionAreas = useMemo(() => {
     if (!state || !selectedIntersection) return [];
@@ -121,7 +144,12 @@ export const App = () => {
     if (!state?.currentPlayerId) return;
     const cubes = state.legal.takeOptions[takeIndex];
     if (!cubes) return;
-    void sendAction({ type: "TAKE_CUBES", playerId: state.currentPlayerId, cubes });
+    void sendAction({
+      type: "TAKE_CUBES",
+      playerId: state.currentPlayerId,
+      cubes,
+      accelerateCardId: accelerateCardId || undefined,
+    });
   };
 
   const confirmPlace = () => {
@@ -131,6 +159,11 @@ export const App = () => {
       playerId: state.currentPlayerId,
       areaId: placeAreaId,
       cubes: placeCubes,
+      accelerateCardId: accelerateCardId || undefined,
+      redevelopmentMove:
+        selectedAccelerator?.kind === "redevelopment"
+          ? redevelopmentMove
+          : undefined,
     });
   };
 
@@ -141,7 +174,19 @@ export const App = () => {
       playerId: state.currentPlayerId,
       intersectionId: buildIntersectionId,
       payment,
+      accelerateCardId: accelerateCardId || undefined,
+      waivedColor: waivedColor || undefined,
     });
+  };
+
+  const confirmScore = () => {
+    if (!state?.currentPlayerId || !scoreCardId) return;
+    void sendAction({ type: "SCORE_CARD", playerId: state.currentPlayerId, cardId: scoreCardId });
+  };
+
+  const pickDraftCard = (cardId: string) => {
+    if (!state?.currentPlayerId) return;
+    void sendAction({ type: "DRAFT_PICK", playerId: state.currentPlayerId, cardId });
   };
 
   if (!state) {
@@ -178,6 +223,70 @@ export const App = () => {
           <button className="primary" onClick={startGame}>
             ゲーム開始
           </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (state.status === "draft" && state.draft) {
+    return (
+      <main className="app-shell">
+        <header className="topbar">
+          <div>
+            <h1>Hex Cube Cities</h1>
+            <p>
+              Draft {state.draft.round} / {state.draft.totalRounds}
+            </p>
+          </div>
+          <div className="turn-block">
+            <span>選択</span>
+            <strong>{state.draft.currentPlayerName}</strong>
+          </div>
+          <div className="icon-actions">
+            <button aria-label="New game" onClick={newGame}>
+              <UserPlus size={18} />
+            </button>
+            <button aria-label="Undo" onClick={undo} disabled={!state.legal.canUndo}>
+              <Undo2 size={18} />
+            </button>
+            <button aria-label="Reset" onClick={reset}>
+              <RotateCcw size={18} />
+            </button>
+          </div>
+        </header>
+        <section className="player-strip" aria-label="ドラフト状況">
+          {state.players.map((player) => (
+            <article
+              key={player.id}
+              className={`player-card ${player.id === state.currentPlayerId ? "active" : ""}`}
+              style={{ borderTopColor: player.color }}
+            >
+              <div className="player-name">
+                <span style={{ backgroundColor: player.color }} />
+                <strong>{player.name}</strong>
+              </div>
+              <p>選択済み {state.draft?.pickedCounts[player.id] ?? 0} / 4</p>
+              <div className="mini-card-list">
+                {player.cards.map((card) => (
+                  <span key={card.id}>{cardLabel(card)}</span>
+                ))}
+              </div>
+            </article>
+          ))}
+        </section>
+        <section className="draft-panel">
+          <h2>{state.draft.currentPlayerName} の手札</h2>
+          <div className="card-grid">
+            {state.draft.currentPack.map((card) => (
+              <CardButton
+                key={card.id}
+                card={card}
+                onClick={() => pickDraftCard(card.id)}
+                disabled={!state.legal.draftPickCardIds.includes(card.id)}
+              />
+            ))}
+          </div>
+          {error ? <p className="error">{error}</p> : null}
         </section>
       </main>
     );
@@ -228,8 +337,16 @@ export const App = () => {
               ))}
             </div>
             <p>
-              手元 {player.handTotal} / 10 · 街 {player.cityCount} · 手番 {player.turnsTaken}
+              手元 {player.handTotal} / 10 · 街 {player.cityCount} · 評価 {player.scoreFromCards} · 合計{" "}
+              {player.projectedContribution}
             </p>
+            <div className="mini-card-list">
+              {player.cards.map((card) => (
+                <span key={card.id}>{cardLabel(card)}</span>
+              ))}
+              {player.cards.length === 0 ? <span>未使用なし</span> : null}
+            </div>
+            <p>使用済み {player.usedCards.length} · 手番 {player.turnsTaken}</p>
           </article>
         ))}
       </section>
@@ -249,13 +366,24 @@ export const App = () => {
 
           <section className="actions">
             <div className="mode-tabs" role="tablist" aria-label="アクション">
-              {(["take", "place", "build", "pass"] as Mode[]).map((candidate) => (
+              {(["take", "place", "build", "score", "pass"] as Mode[]).map((candidate) => (
                 <button
                   key={candidate}
                   className={mode === candidate ? "selected" : ""}
-                  onClick={() => setMode(candidate)}
+                  onClick={() => {
+                    setMode(candidate);
+                    setAccelerateCardId("");
+                  }}
                 >
-                  {candidate === "take" ? "取る" : candidate === "place" ? "置く" : candidate === "build" ? "建設" : "パス"}
+                  {candidate === "take"
+                    ? "取る"
+                    : candidate === "place"
+                      ? "置く"
+                      : candidate === "build"
+                        ? "建設"
+                        : candidate === "score"
+                          ? "評価"
+                          : "パス"}
                 </button>
               ))}
             </div>
@@ -272,6 +400,12 @@ export const App = () => {
                     ))}
                   </select>
                 </label>
+                <AcceleratorSelect
+                  cards={currentPlayer?.cards ?? []}
+                  allowedIds={state.legal.accelerationCardIds.take ?? []}
+                  value={accelerateCardId}
+                  onChange={setAccelerateCardId}
+                />
                 <button className="primary" onClick={confirmTake} disabled={state.legal.takeOptions.length === 0}>
                   確定
                 </button>
@@ -290,16 +424,84 @@ export const App = () => {
                         value={area.id}
                         disabled={!state.legal.placeableAreaIds.includes(area.id)}
                       >
-                        {area.label} {area.cubeTotal}/{state.areaCapacity}
+                        {area.label} {area.cubeTotal}/{state.areaCapacity} · 最大{area.currentPlacementLimit}
                       </option>
                     ))}
                   </select>
                 </label>
+                <AcceleratorSelect
+                  cards={currentPlayer?.cards ?? []}
+                  allowedIds={state.legal.accelerationCardIds.place ?? []}
+                  value={accelerateCardId}
+                  onChange={setAccelerateCardId}
+                />
+                {selectedAccelerator?.kind === "redevelopment" ? (
+                  <div className="payment-grid">
+                    <label>
+                      移動色
+                      <select
+                        value={redevelopmentMove.color}
+                        onChange={(event) =>
+                          setRedevelopmentMove({
+                            ...redevelopmentMove,
+                            color: event.target.value as CubeColor,
+                          })
+                        }
+                      >
+                        {cubeColors.map((color) => (
+                          <option key={color} value={color}>
+                            {colorLabels[color]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      移動元
+                      <select
+                        value={redevelopmentMove.fromAreaId}
+                        onChange={(event) =>
+                          setRedevelopmentMove({ ...redevelopmentMove, fromAreaId: event.target.value })
+                        }
+                      >
+                        <option value="">選択</option>
+                        {state.areas.map((area) => (
+                          <option key={area.id} value={area.id}>
+                            {area.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      移動先
+                      <select
+                        value={redevelopmentMove.toAreaId}
+                        onChange={(event) =>
+                          setRedevelopmentMove({ ...redevelopmentMove, toAreaId: event.target.value })
+                        }
+                      >
+                        <option value="">選択</option>
+                        {state.areas.map((area) => (
+                          <option key={area.id} value={area.id}>
+                            {area.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : null}
                 <CubeInputs counts={placeCubes} setCounts={setPlaceCubes} maxByColor={currentPlayer?.hand ?? emptyCounts()} />
+                <p className="hint">この配置の最大数: {placeLimit}</p>
                 <button
                   className="primary"
                   onClick={confirmPlace}
-                  disabled={!isActive || !selectedPlaceAreaIsLegal || placeTotal < 1 || placeTotal > 3}
+                  disabled={
+                    !isActive ||
+                    !selectedPlaceAreaIsLegal ||
+                    placeTotal < 1 ||
+                    placeTotal > placeLimit ||
+                    (selectedAccelerator?.kind === "redevelopment" &&
+                      (!redevelopmentMove.fromAreaId || !redevelopmentMove.toAreaId))
+                  }
                 >
                   確定
                 </button>
@@ -308,6 +510,25 @@ export const App = () => {
 
             {mode === "build" ? (
               <div className="action-form">
+                <AcceleratorSelect
+                  cards={currentPlayer?.cards ?? []}
+                  allowedIds={state.legal.accelerationCardIds.build ?? []}
+                  value={accelerateCardId}
+                  onChange={setAccelerateCardId}
+                />
+                {buildUsesUrbanization ? (
+                  <label>
+                    免除色
+                    <select value={waivedColor} onChange={(event) => setWaivedColor(event.target.value as CubeColor)}>
+                      <option value="">選択</option>
+                      {cubeColors.map((color) => (
+                        <option key={color} value={color}>
+                          {colorLabels[color]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : null}
                 <label>
                   交点
                   <select
@@ -327,7 +548,7 @@ export const App = () => {
                         <option
                           key={intersection.id}
                           value={intersection.id}
-                          disabled={missing.length > 0}
+                          disabled={missing.length > 0 && !(buildUsesUrbanization && missing.length <= 1)}
                         >
                           {intersection.id}
                         </option>
@@ -342,9 +563,10 @@ export const App = () => {
                         {colorLabels[color]}
                         <select
                           value={payment[color]}
+                          disabled={waivedColor === color}
                           onChange={(event) => setPayment({ ...payment, [color]: event.target.value })}
                         >
-                          <option value="">支払い元</option>
+                          <option value="">{waivedColor === color ? "免除" : "支払い元"}</option>
                           {selectedIntersectionAreas.map((area) => (
                             <option key={area.id} value={area.id} disabled={area.cubes[color] < 1}>
                               {area.label} ({area.cubes[color]})
@@ -360,11 +582,41 @@ export const App = () => {
                   onClick={confirmBuild}
                   disabled={
                     !isActive ||
-                    !selectedBuildIsLegal ||
-                    cubeColors.some((color) => !payment[color])
+                    !selectedBuildOption ||
+                    (buildUsesUrbanization && !waivedColor) ||
+                    (!buildUsesUrbanization && !selectedBuildIsLegal) ||
+                    (buildUsesUrbanization &&
+                      selectedBuildOption.missingColors.some((color) => color !== waivedColor)) ||
+                    cubeColors.some((color) => waivedColor !== color && !payment[color])
                   }
                 >
                   確定
+                </button>
+              </div>
+            ) : null}
+
+            {mode === "score" ? (
+              <div className="action-form">
+                <label>
+                  評価カード
+                  <select value={scoreCardId} onChange={(event) => setScoreCardId(event.target.value)}>
+                    <option value="">選択</option>
+                    {(currentPlayer?.cards ?? []).map((card) => (
+                      <option key={card.id} value={card.id}>
+                        {cardLabel(card)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {currentPlayer?.cards.length ? (
+                  <div className="card-list">
+                    {currentPlayer.cards.map((card) => (
+                      <CardButton key={card.id} card={card} selected={card.id === scoreCardId} onClick={() => setScoreCardId(card.id)} />
+                    ))}
+                  </div>
+                ) : null}
+                <button className="primary" onClick={confirmScore} disabled={!isActive || !scoreCardId}>
+                  評価する
                 </button>
               </div>
             ) : null}
@@ -423,6 +675,59 @@ export const App = () => {
         </aside>
       </section>
     </main>
+  );
+};
+
+const AcceleratorSelect = ({
+  cards,
+  allowedIds,
+  value,
+  onChange,
+}: {
+  cards: CardInstance[];
+  allowedIds: string[];
+  value: string;
+  onChange: (value: string) => void;
+}) => {
+  const allowed = cards.filter((card) => allowedIds.includes(card.id));
+  return (
+    <label>
+      加速カード
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">使わない</option>
+        {allowed.map((card) => (
+          <option key={card.id} value={card.id}>
+            {cardLabel(card)}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+};
+
+const CardButton = ({
+  card,
+  selected = false,
+  disabled = false,
+  onClick,
+}: {
+  card: CardInstance;
+  selected?: boolean;
+  disabled?: boolean;
+  onClick: () => void;
+}) => {
+  const definition = cardDefinitions[card.kind];
+  return (
+    <button
+      type="button"
+      className={`rule-card ${selected ? "selected" : ""}`}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      <strong>{definition.name}</strong>
+      <span>加速: {definition.accelerationText}</span>
+      <span>評価: {definition.scoringText}</span>
+    </button>
   );
 };
 
@@ -494,7 +799,7 @@ const Board = ({
             <g key={area.id}>
               <polygon
                 points={points}
-                className={`hex ${selectable ? "selectable" : ""} ${selectedAreaId === area.id ? "selected" : ""}`}
+                className={`hex ${area.areaColor} ${selectable ? "selectable" : ""} ${area.hasCurrentPlayerCityBonus ? "city-bonus" : ""} ${selectedAreaId === area.id ? "selected" : ""}`}
                 onClick={() => selectable && onAreaSelect(area.id)}
               />
               <text x={area.x} y={area.y - 30} className="area-label">
@@ -503,8 +808,11 @@ const Board = ({
               <text x={area.x} y={area.y - 7} className="area-count">
                 {area.cubeTotal}/{state.areaCapacity}
               </text>
+              <text x={area.x} y={area.y + 13} className="area-color-label">
+                {area.areaColor === "neutral" ? "中立" : colorLabels[area.areaColor]} · 最大{area.currentPlacementLimit}
+              </text>
               {cubeColors.map((color, index) => (
-                <g key={color} transform={`translate(${area.x - 38 + index * 38} ${area.y + 24})`}>
+                <g key={color} transform={`translate(${area.x - 38 + index * 38} ${area.y + 43})`}>
                   <rect className={`cube-icon ${color}`} x="-13" y="-13" width="26" height="26" rx="4" />
                   <text className="cube-text" y="5">
                     {area.cubes[color]}

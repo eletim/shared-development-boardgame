@@ -30,38 +30,68 @@ const isCubeMap = (value: unknown): value is Record<string, number> => {
   );
 };
 
+const isCubeColor = (value: unknown): value is (typeof cubeColors)[number] =>
+  typeof value === "string" && cubeColors.includes(value as any);
+
+const maybeString = (value: unknown): string | undefined =>
+  typeof value === "string" && value ? value : undefined;
+
 const parseAction = (value: unknown): GameAction | null => {
   if (!isRecord(value) || typeof value.type !== "string" || typeof value.playerId !== "string") {
     return null;
   }
 
+  if (value.type === "DRAFT_PICK" && typeof value.cardId === "string") {
+    return { type: value.type, playerId: value.playerId, cardId: value.cardId };
+  }
   if (value.type === "TAKE_CUBES" && isCubeMap(value.cubes)) {
-    return { type: value.type, playerId: value.playerId, cubes: value.cubes };
+    return {
+      type: value.type,
+      playerId: value.playerId,
+      cubes: value.cubes,
+      accelerateCardId: maybeString(value.accelerateCardId),
+    };
   }
   if (
     value.type === "PLACE_CUBES" &&
     typeof value.areaId === "string" &&
     isCubeMap(value.cubes)
   ) {
+    const redevelopmentMove = isRecord(value.redevelopmentMove) &&
+      isCubeColor(value.redevelopmentMove.color) &&
+      typeof value.redevelopmentMove.fromAreaId === "string" &&
+      typeof value.redevelopmentMove.toAreaId === "string"
+      ? {
+          color: value.redevelopmentMove.color,
+          fromAreaId: value.redevelopmentMove.fromAreaId,
+          toAreaId: value.redevelopmentMove.toAreaId,
+        }
+      : undefined;
     return {
       type: value.type,
       playerId: value.playerId,
       areaId: value.areaId,
       cubes: value.cubes,
+      accelerateCardId: maybeString(value.accelerateCardId),
+      redevelopmentMove,
     };
   }
   if (value.type === "BUILD_CITY" && typeof value.intersectionId === "string" && isRecord(value.payment)) {
     const payment: Record<string, string> = {};
     for (const color of cubeColors) {
-      if (typeof value.payment[color] !== "string") return null;
-      payment[color] = value.payment[color];
+      if (typeof value.payment[color] === "string") payment[color] = value.payment[color];
     }
     return {
       type: value.type,
       playerId: value.playerId,
       intersectionId: value.intersectionId,
-      payment: payment as Record<(typeof cubeColors)[number], string>,
+      payment: payment as Partial<Record<(typeof cubeColors)[number], string>>,
+      accelerateCardId: maybeString(value.accelerateCardId),
+      waivedColor: isCubeColor(value.waivedColor) ? value.waivedColor : undefined,
     };
+  }
+  if (value.type === "SCORE_CARD" && typeof value.cardId === "string") {
+    return { type: value.type, playerId: value.playerId, cardId: value.cardId };
   }
   if (value.type === "PASS") {
     return { type: value.type, playerId: value.playerId };

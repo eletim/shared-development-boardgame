@@ -12,6 +12,7 @@ const baseState = (): PublicGameState => ({
   areaCapacity: 3,
   currentPlayerId: "player-1",
   currentPlayerName: "A",
+  draft: null,
   players: [
     {
       id: "player-1",
@@ -20,6 +21,10 @@ const baseState = (): PublicGameState => ({
       hand: { red: 1, blue: 1, yellow: 1 },
       handTotal: 3,
       cityCount: 0,
+      scoreFromCards: 0,
+      projectedContribution: 0,
+      cards: [{ id: "red-development-test", kind: "red-development" }],
+      usedCards: [],
       turnsTaken: 0,
     },
     {
@@ -29,6 +34,10 @@ const baseState = (): PublicGameState => ({
       hand: { red: 0, blue: 0, yellow: 0 },
       handTotal: 0,
       cityCount: 0,
+      scoreFromCards: 0,
+      projectedContribution: 0,
+      cards: [],
+      usedCards: [],
       turnsTaken: 0,
     },
   ],
@@ -43,6 +52,9 @@ const baseState = (): PublicGameState => ({
       y: 0,
       cubes: { red: 1, blue: 1, yellow: 1 },
       cubeTotal: 3,
+      areaColor: "neutral",
+      currentPlacementLimit: 3,
+      hasCurrentPlayerCityBonus: false,
     },
   ],
   intersections: [
@@ -58,8 +70,11 @@ const baseState = (): PublicGameState => ({
   legal: {
     canUndo: false,
     canPass: true,
+    draftPickCardIds: [],
     takeOptions: [{ red: 1, blue: 1, yellow: 1 }],
     placeableAreaIds: ["area-center"],
+    scoreableCardIds: ["red-development-test"],
+    accelerationCardIds: { take: ["red-development-test"], place: [], build: [] },
     buildableIntersections: [
       {
         intersectionId: "intersection-01",
