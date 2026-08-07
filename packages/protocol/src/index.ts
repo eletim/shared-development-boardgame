@@ -15,10 +15,7 @@ export type AreaColor = CubeColor | "neutral";
 export type CardType =
   | "red-development"
   | "blue-development"
-  | "yellow-development"
-  | "focused-development"
-  | "wide-development"
-  | "redevelopment";
+  | "yellow-development";
 
 export type CardUseMode = "development" | "scoring" | "basic";
 
@@ -31,14 +28,8 @@ export type CardSummary = {
   scoringText: string;
 };
 
-export type CubePlacement = {
+export type EndTurnPlacement = {
   areaId: string;
-  cubes: PartialCubeCounts;
-};
-
-export type CubeMove = {
-  fromAreaId: string;
-  toAreaId: string;
   color: CubeColor;
 };
 
@@ -138,10 +129,6 @@ export type GameAction =
       cardInstanceId: string;
       mode: CardUseMode;
       basicColor?: CubeColor;
-      areaId?: string;
-      cubes?: PartialCubeCounts;
-      placements?: CubePlacement[];
-      move?: CubeMove;
     }
   | {
       type: "BUILD_CITY";
@@ -151,6 +138,7 @@ export type GameAction =
   | {
       type: "END_TURN";
       playerId: string;
+      placement?: EndTurnPlacement;
     };
 
 export type GameResponse = {

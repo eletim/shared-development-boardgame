@@ -9,8 +9,8 @@ const card = (instanceId: string, name = "赤の発展"): CardSummary => ({
   type: "red-development",
   name,
   color: "red",
-  developmentText: "手元の赤キューブを最大3個、1つのエリアへ置く",
-  scoringText: "現在の赤エリア1つにつき1貢献度",
+  developmentText: "赤キューブを2個獲得する",
+  scoringText: "赤エリアに隣接する自分の都市数 × 都市Lv",
 });
 
 const baseState = (
@@ -149,10 +149,20 @@ describe("App", () => {
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "置かずに手番終了" }));
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("END_TURN");
+    expect(JSON.stringify(lastRequestInit(fetchMock))).not.toContain("placement");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
       json: async () => ({ state: baseState("action") }),
     });
-    await userEvent.click(screen.getByRole("button", { name: "手番終了" }));
+    await userEvent.selectOptions(screen.getByLabelText("エリア"), "area-center");
+    await userEvent.click(screen.getByRole("button", { name: "1個置いて手番終了" }));
     expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("END_TURN");
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("placement");
 
     await userEvent.selectOptions(screen.getByLabelText("交点"), "intersection-01");
     await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));
@@ -174,6 +184,26 @@ describe("App", () => {
     await screen.findByText(/ドラフト 1 \/ 8/);
     await userEvent.click(screen.getByRole("button", { name: /赤の発展/ }));
     expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("DRAFT_PICK");
+  });
+
+  it("only enables turn-end placement areas that fit the next capacity", async () => {
+    const fullArea = baseState("action", true);
+    fullArea.areas[0].cubes = { red: 3, blue: 0, yellow: 0 };
+    fullArea.areas[0].cubeTotal = 3;
+    fullArea.boardCubeTotal = 3;
+    mockFetch([fullArea]);
+    const { unmount } = render(<App />);
+    expect(await screen.findByRole("option", { name: "中央 3/3" })).toBeDisabled();
+    unmount();
+
+    const boundaryArea = baseState("action", true);
+    boundaryArea.areas[0].cubes = { red: 3, blue: 0, yellow: 0 };
+    boundaryArea.areas[0].cubeTotal = 3;
+    boundaryArea.boardCubeTotal = 13;
+    boundaryArea.areaCapacity = 3;
+    mockFetch([boundaryArea]);
+    render(<App />);
+    expect(await screen.findByRole("option", { name: "中央 3/5" })).not.toBeDisabled();
   });
 
   it("shows errors and ended game results", async () => {
