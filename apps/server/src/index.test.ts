@@ -11,6 +11,18 @@ const post = async (url: string, payload: unknown = {}) =>
     payload: payload as any,
   });
 
+const finishDraft = async () => {
+  for (;;) {
+    const current = await server.inject({ method: "GET", url: "/api/game" });
+    const state = current.json().state;
+    if (state.status !== "draft") return state;
+    const card = state.draft.currentPack[0];
+    await post("/api/game/actions", {
+      action: { type: "DRAFT_PICK", playerId: state.currentPlayerId, cardId: card.id },
+    });
+  }
+};
+
 describe("server API", () => {
   beforeEach(async () => {
     server = createServer();
@@ -25,6 +37,7 @@ describe("server API", () => {
     const response = await post("/api/game/start", { playerNames: ["A", "B"] });
     expect(response.statusCode).toBe(200);
     expect(response.json().state.players).toHaveLength(2);
+    expect(response.json().state.status).toBe("draft");
   });
 
   it("rejects API calls before the game starts", async () => {
@@ -37,6 +50,7 @@ describe("server API", () => {
 
   it("applies a valid action and rejects a representative invalid action", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
+    await finishDraft();
     const valid = await post("/api/game/actions", {
       action: { type: "TAKE_CUBES", playerId: "player-1", cubes: { red: 1, blue: 1, yellow: 1 } },
     });
@@ -50,6 +64,7 @@ describe("server API", () => {
 
   it("supports reset and undo", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
+    await finishDraft();
     await post("/api/game/actions", {
       action: { type: "PASS", playerId: "player-1" },
     });
@@ -63,6 +78,7 @@ describe("server API", () => {
 
   it("rejects actions after the game ended", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
+    await finishDraft();
     for (let index = 0; index < 24; index += 1) {
       const current = await server.inject({ method: "GET", url: "/api/game" });
       const playerId = current.json().state.currentPlayerId;

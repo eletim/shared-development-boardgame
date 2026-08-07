@@ -234,7 +234,7 @@ select {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -254,6 +254,73 @@ select {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+}
+
+.hint {
+  margin: 0;
+  color: #5b5f56;
+  font-weight: 700;
+}
+
+.draft-panel {
+  background: #ffffff;
+  border: 1px solid #d8d9d0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.draft-panel h2 {
+  margin: 0 0 14px;
+  font-size: 20px;
+}
+
+.card-grid,
+.card-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+}
+
+.rule-card {
+  min-height: 160px;
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
+  text-align: left;
+  border-color: #c8c9c0;
+  background: #fbfcf7;
+}
+
+.rule-card strong {
+  font-size: 16px;
+}
+
+.rule-card span {
+  color: #3f443a;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.rule-card.selected {
+  outline: 3px solid #24563b;
+}
+
+.mini-card-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+}
+
+.mini-card-list span {
+  border: 1px solid #d8d9d0;
+  border-radius: 5px;
+  padding: 3px 6px;
+  background: #fbfcf7;
+  color: #3f443a;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .error {
@@ -286,6 +353,29 @@ select {
   stroke-width: 2;
 }
 
+.hex.red {
+  fill: #f7d8d5;
+  stroke: #d73a31;
+}
+
+.hex.blue {
+  fill: #dbeafe;
+  stroke: #1f6feb;
+}
+
+.hex.yellow {
+  fill: #faedc7;
+  stroke: #b7791f;
+}
+
+.hex.neutral {
+  fill: #eef0e6;
+}
+
+.hex.city-bonus {
+  stroke-dasharray: 9 5;
+}
+
 .hex.selectable {
   cursor: pointer;
   fill: #e5f0df;
@@ -297,7 +387,8 @@ select {
 }
 
 .area-label,
-.area-count {
+.area-count,
+.area-color-label {
   text-anchor: middle;
   font-weight: 800;
   fill: #202124;
@@ -310,6 +401,10 @@ select {
 
 .area-count {
   font-size: 16px;
+}
+
+.area-color-label {
+  font-size: 12px;
 }
 
 .cube-icon {
