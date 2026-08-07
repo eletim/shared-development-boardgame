@@ -65,6 +65,7 @@ export type GameState = {
   round: number;
   maxRounds: number;
   currentPlayerIndex: number;
+  turnCardUsed: boolean;
   draftPickNumber: number;
   players: PlayerState[];
   draftPacks: CardInstance[][];
@@ -198,12 +199,17 @@ export const getCityLevel = (state: GameState): 1 | 2 | 3 => getWorldLevel(state
 
 export const getPhase = (state: GameState): 1 | 2 | 3 => getWorldLevel(state);
 
-export const getAreaCapacity = (state: GameState): number => {
-  const worldLevel = getWorldLevel(state);
+const getAreaCapacityForWorldLevel = (worldLevel: 1 | 2 | 3): number => {
   if (worldLevel === 1) return 3;
   if (worldLevel === 2) return 5;
   return 7;
 };
+
+const getAreaCapacityForCubeTotal = (boardCubeTotal: number): number =>
+  getAreaCapacityForWorldLevel(getWorldLevelFromCubeTotal(boardCubeTotal));
+
+export const getAreaCapacity = (state: GameState): number =>
+  getAreaCapacityForWorldLevel(getWorldLevel(state));
 
 export const createBoardDefinition = (): BoardDefinition => {
   const axialAreas = [
@@ -268,6 +274,7 @@ export const createInitialState = (playerNames: string[]): GameState => {
     round: 1,
     maxRounds,
     currentPlayerIndex: 0,
+    turnCardUsed: false,
     draftPickNumber: 1,
     players: names.map((name, index) => ({
       id: `player-${index + 1}`,
@@ -406,6 +413,7 @@ const produceForRound = (state: GameState): ProductionEntry[] => {
 const startRound = (state: GameState): void => {
   state.phase = "draft";
   state.currentPlayerIndex = 0;
+  state.turnCardUsed = false;
   state.draftPickNumber = 1;
   state.players.forEach((player) => {
     player.handCards = [];
@@ -422,11 +430,12 @@ const endGame = (state: GameState): void => {
   state.status = "ended";
   state.phase = "ended";
   state.currentPlayerIndex = 0;
+  state.turnCardUsed = false;
   state.draftPacks = [];
   addHistory(state, "GAME_END", null, "3ラウンド終了。最終得点を確定");
 };
 
-const advanceAfterCardUse = (state: GameState): void => {
+const advanceAfterTurnEnd = (state: GameState): void => {
   if (state.players.every((player) => player.handCards.length === 0)) {
     if (state.round >= state.maxRounds) {
       endGame(state);
@@ -441,6 +450,7 @@ const advanceAfterCardUse = (state: GameState): void => {
     const index = (state.currentPlayerIndex + offset) % state.players.length;
     if (state.players[index].handCards.length > 0) {
       state.currentPlayerIndex = index;
+      state.turnCardUsed = false;
       return;
     }
   }
@@ -498,7 +508,7 @@ const validatePlacementPlan = (
   }
 
   if (checkCapacity) {
-    const capacity = getAreaCapacity(state);
+    const capacity = getAreaCapacityForCubeTotal(getBoardCubeTotal(state) + plan.total);
     for (const [areaId, cubes] of plan.cubesByArea) {
       const area = getArea(state, areaId);
       if (!area) return { ...plan, error: "存在しないエリアです。" };
@@ -663,6 +673,9 @@ const applyUseCard = (
   if (state.phase !== "action") return reject(state, "現在はアクションフェーズではありません。");
   const headerError = assertCurrentPlayer(state, action.playerId);
   if (headerError) return reject(state, headerError);
+  if (state.turnCardUsed) {
+    return reject(state, "この手番ではすでにカードを使用しています。");
+  }
 
   const player = currentPlayer(state);
   const card = player.handCards.find((candidate) => candidate.instanceId === action.cardInstanceId);
@@ -682,7 +695,7 @@ const applyUseCard = (
       action.playerId,
       `${cardDefinitions[usedCard.type].name}を基本取得に使用 (${action.basicColor}:1)`
     );
-    advanceAfterCardUse(next);
+    next.turnCardUsed = true;
     return { ok: true, state: next };
   }
 
@@ -693,7 +706,7 @@ const applyUseCard = (
     const usedCard = removeCard(nextPlayer, action.cardInstanceId);
     nextPlayer.contribution += gained;
     addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で${gained}貢献度を獲得`);
-    advanceAfterCardUse(next);
+    next.turnCardUsed = true;
     return { ok: true, state: next };
   }
 
@@ -715,7 +728,7 @@ const applyUseCard = (
     const usedCard = removeCard(nextPlayer, action.cardInstanceId);
     applyPlacementPlan(next, nextPlayer, plan);
     addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で配置 (${formatCubes(plan.cubesByColor)})`);
-    advanceAfterCardUse(next);
+    next.turnCardUsed = true;
     return { ok: true, state: next };
   }
 
@@ -728,7 +741,7 @@ const applyUseCard = (
     const usedCard = removeCard(nextPlayer, action.cardInstanceId);
     applyPlacementPlan(next, nextPlayer, plan);
     addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で配置 (${formatCubes(plan.cubesByColor)})`);
-    advanceAfterCardUse(next);
+    next.turnCardUsed = true;
     return { ok: true, state: next };
   }
 
@@ -740,7 +753,7 @@ const applyUseCard = (
     const usedCard = removeCard(nextPlayer, action.cardInstanceId);
     applyPlacementPlan(next, nextPlayer, plan);
     addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で広域配置 (${formatCubes(plan.cubesByColor)})`);
-    advanceAfterCardUse(next);
+    next.turnCardUsed = true;
     return { ok: true, state: next };
   }
 
@@ -759,7 +772,8 @@ const applyUseCard = (
   movedTo.cubes[action.move!.color] += 1;
   for (const [areaId, cubes] of plan.cubesByArea) {
     const area = getArea(afterMove, areaId);
-    if (!area || areaTotal(area) + cubeTotal(cubes) > getAreaCapacity(afterMove)) {
+    const capacityAfterPlacement = getAreaCapacityForCubeTotal(getBoardCubeTotal(afterMove) + plan.total);
+    if (!area || areaTotal(area) + cubeTotal(cubes) > capacityAfterPlacement) {
       return reject(state, "移動・配置後のエリア容量を超えています。");
     }
   }
@@ -773,8 +787,25 @@ const applyUseCard = (
     action.playerId,
     `${cardDefinitions[usedCard.type].name}で${action.move!.color}を移動し配置 (${formatCubes(plan.cubesByColor) || "なし"})`
   );
-  advanceAfterCardUse(afterMove);
+  afterMove.turnCardUsed = true;
   return { ok: true, state: afterMove };
+};
+
+const applyEndTurn = (
+  state: GameState,
+  action: Extract<GameAction, { type: "END_TURN" }>
+): ActionResult => {
+  if (state.phase !== "action") return reject(state, "現在はアクションフェーズではありません。");
+  const headerError = assertCurrentPlayer(state, action.playerId);
+  if (headerError) return reject(state, headerError);
+  if (!state.turnCardUsed) {
+    return reject(state, "手番終了前にカードを1枚使用してください。");
+  }
+
+  const next = cloneState(state);
+  addHistory(next, action.type, action.playerId, "手番終了");
+  advanceAfterTurnEnd(next);
+  return { ok: true, state: next };
 };
 
 export const applyAction = (state: GameState, action: GameAction): ActionResult => {
@@ -782,6 +813,7 @@ export const applyAction = (state: GameState, action: GameAction): ActionResult 
   if (action.type === "DRAFT_PICK") return applyDraftPick(state, action);
   if (action.type === "USE_CARD") return applyUseCard(state, action);
   if (action.type === "BUILD_CITY") return applyBuildCity(state, action);
+  if (action.type === "END_TURN") return applyEndTurn(state, action);
   return reject(state, "未対応のアクションです。");
 };
 
@@ -798,6 +830,7 @@ export const getLegalInfo = (state: GameState, canUndo = false): LegalInfo => {
       canDraft: false,
       canUseCard: false,
       canBuildCity: false,
+      canEndTurn: false,
       draftPack: [],
       buildableIntersectionIds: [],
     };
@@ -809,8 +842,9 @@ export const getLegalInfo = (state: GameState, canUndo = false): LegalInfo => {
   return {
     canUndo,
     canDraft: state.phase === "draft",
-    canUseCard: state.phase === "action" && player.handCards.length > 0,
+    canUseCard: state.phase === "action" && player.handCards.length > 0 && !state.turnCardUsed,
     canBuildCity: state.phase === "action" && canPayCity,
+    canEndTurn: state.phase === "action" && state.turnCardUsed,
     draftPack: state.phase === "draft"
       ? (state.draftPacks[state.currentPlayerIndex] ?? []).map(summarizeCard)
       : [],
@@ -856,6 +890,7 @@ export const toPublicState = (state: GameState, canUndo = false): PublicGameStat
     boardCubeTotal: getBoardCubeTotal(state),
     currentPlayerId: activePlayer?.id ?? null,
     currentPlayerName: activePlayer?.name ?? null,
+    turnCardUsed: state.turnCardUsed,
     draftPickNumber: state.draftPickNumber,
     players,
     areas: state.areas.map((area) => ({

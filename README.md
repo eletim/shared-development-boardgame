@@ -70,8 +70,11 @@ pnpm lint
   not part of the current rule set.
 - City building is not a card action. During the current player's action turn,
   they may build any number of cities as long as they can pay the cost.
-- Valid card uses advance to the next player. Valid city builds do not advance
-  the turn. Invalid actions do not change state or advance the turn.
+- Each action turn must use exactly one card before it can end. City builds may
+  happen before or after that card use. Ending the turn advances to the next
+  player with cards.
+- Valid city builds do not advance the turn. Invalid actions do not change state
+  or advance the turn.
 - The server is the source of truth for game state and rule validation.
 
 ## Area Color
@@ -104,7 +107,8 @@ The game lasts three rounds.
 1. City production
 2. Draft
 3. Action phase
-4. When every hand is empty, start the next round or end the game
+4. When every hand is empty and the active turn ends, start the next round or
+   end the game
 
 At the start of each round, before draft, every city produces cubes
 simultaneously:
@@ -164,6 +168,8 @@ the highest final contribution win; tied winners are shared.
 - During action phase, choose a hand card and one of its three uses.
 - Use the city build panel before or after card use while the current player can
   pay the city cost.
+- Click the turn-end button after the card use and any city builds for that
+  turn.
 - Undo restores the full state before the most recent successful action.
 - Reset restarts the current player set from the initial state.
 - Recent action history, city production, final results, and server-side errors

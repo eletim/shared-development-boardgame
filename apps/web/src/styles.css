@@ -41,6 +41,13 @@ button:disabled {
   padding: 0 18px;
 }
 
+.secondary {
+  border-color: #24563b;
+  color: #24563b;
+  font-weight: 700;
+  padding: 0 18px;
+}
+
 .wide {
   width: 100%;
 }

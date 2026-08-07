@@ -13,7 +13,10 @@ const card = (instanceId: string, name = "赤の発展"): CardSummary => ({
   scoringText: "現在の赤エリア1つにつき1貢献度",
 });
 
-const baseState = (phase: PublicGameState["phase"] = "draft"): PublicGameState => ({
+const baseState = (
+  phase: PublicGameState["phase"] = "draft",
+  turnCardUsed = false
+): PublicGameState => ({
   status: "active",
   phase,
   round: 1,
@@ -24,6 +27,7 @@ const baseState = (phase: PublicGameState["phase"] = "draft"): PublicGameState =
   boardCubeTotal: 0,
   currentPlayerId: "player-1",
   currentPlayerName: "A",
+  turnCardUsed,
   draftPickNumber: 1,
   players: [
     {
@@ -79,8 +83,9 @@ const baseState = (phase: PublicGameState["phase"] = "draft"): PublicGameState =
   legal: {
     canUndo: false,
     canDraft: phase === "draft",
-    canUseCard: phase === "action",
+    canUseCard: phase === "action" && !turnCardUsed,
     canBuildCity: phase === "action",
+    canEndTurn: phase === "action" && turnCardUsed,
     draftPack: phase === "draft" ? [card("draft-1")] : [],
     buildableIntersectionIds: phase === "action" ? ["intersection-01"] : [],
   },
@@ -133,10 +138,21 @@ describe("App", () => {
     render(<App />);
     await screen.findByText(/カード手番/);
 
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    });
     await userEvent.click(screen.getByRole("button", { name: "基本取得" }));
     await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
     expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("USE_CARD");
     expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("basic");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action") }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "手番終了" }));
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("END_TURN");
 
     await userEvent.selectOptions(screen.getByLabelText("交点"), "intersection-01");
     await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));

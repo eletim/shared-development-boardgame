@@ -23,6 +23,9 @@ const play = (state: GameState, action: GameAction): GameState => {
 
 const currentId = (state: GameState): string => state.players[state.currentPlayerIndex].id;
 
+const endTurn = (state: GameState): GameState =>
+  play(state, { type: "END_TURN", playerId: currentId(state) });
+
 const draftAll = (state: GameState): GameState => {
   let next = state;
   while (next.phase === "draft") {
@@ -123,6 +126,9 @@ describe("draft and card turns", () => {
     });
     expect(state.players[0].cubes.blue).toBe(1);
     expect(state.players[0].handCards).toHaveLength(7);
+    expect(state.turnCardUsed).toBe(true);
+    expect(state.currentPlayerIndex).toBe(0);
+    state = endTurn(state);
     expect(state.currentPlayerIndex).toBe(1);
   });
 
@@ -141,6 +147,53 @@ describe("draft and card turns", () => {
     expect(state.players[0].cubes.red).toBe(0);
     expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(3);
     expect(state.players[0].handCards).toHaveLength(7);
+    expect(state.turnCardUsed).toBe(true);
+  });
+
+  it("checks area capacity against the world level after the placement", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    addBoardCubes(state, "area-center", { red: 3 });
+    addBoardCubes(state, "area-east", { blue: 3 });
+    addBoardCubes(state, "area-northeast", { yellow: 3 });
+    addBoardCubes(state, "area-northwest", { red: 3 });
+    addBoardCubes(state, "area-west", { blue: 1 });
+    expect(getBoardCubeTotal(state)).toBe(13);
+    expect(getAreaCapacity(state)).toBe(3);
+
+    state.players[0].cubes.red = 1;
+    const card = cardOfType(state, 0, "red-development");
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: card.instanceId,
+      mode: "development",
+      areaId: "area-center",
+      cubes: { red: 1 },
+    });
+    expect(getBoardCubeTotal(state)).toBe(14);
+    expect(getAreaCapacity(state)).toBe(5);
+    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(4);
+  });
+
+  it("rejects placements that exceed the area capacity after world-level recalculation", () => {
+    const state = draftAll(createInitialState(["A", "B"]));
+    addBoardCubes(state, "area-center", { red: 3 });
+    addBoardCubes(state, "area-east", { blue: 3 });
+    addBoardCubes(state, "area-northeast", { yellow: 3 });
+    addBoardCubes(state, "area-northwest", { red: 3 });
+    addBoardCubes(state, "area-west", { blue: 1 });
+    state.players[0].cubes.red = 3;
+    const card = cardOfType(state, 0, "red-development");
+    const result = applyAction(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: card.instanceId,
+      mode: "development",
+      areaId: "area-center",
+      cubes: { red: 3 },
+    });
+    expect(result.ok).toBe(false);
+    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(3);
   });
 
   it("uses scoring actions without leaving persistent cards", () => {
@@ -191,6 +244,7 @@ describe("draft and card turns", () => {
       mode: "basic",
       basicColor: "red",
     });
+    state = endTurn(state);
     state = play(state, {
       type: "USE_CARD",
       playerId: "player-2",
@@ -198,6 +252,7 @@ describe("draft and card turns", () => {
       mode: "basic",
       basicColor: "blue",
     });
+    state = endTurn(state);
 
     expect(state.round).toBe(2);
     expect(state.phase).toBe("draft");
@@ -254,6 +309,7 @@ describe("city rules and production", () => {
       mode: "basic",
       basicColor: "red",
     });
+    state = endTurn(state);
     state = play(state, {
       type: "USE_CARD",
       playerId: "player-2",
@@ -261,6 +317,7 @@ describe("city rules and production", () => {
       mode: "basic",
       basicColor: "blue",
     });
+    state = endTurn(state);
 
     const production = state.lastProduction.find((entry) => entry.playerId === "player-1")!;
     expect(production.cubes).toEqual({ red: 2, blue: 2, yellow: 0 });
@@ -284,6 +341,7 @@ describe("city rules and production", () => {
       mode: "basic",
       basicColor: "red",
     });
+    state = endTurn(state);
     state = play(state, {
       type: "USE_CARD",
       playerId: "player-2",
@@ -291,6 +349,7 @@ describe("city rules and production", () => {
       mode: "basic",
       basicColor: "blue",
     });
+    state = endTurn(state);
     expect(state.lastProduction.find((entry) => entry.playerId === "player-1")?.cubes.yellow).toBe(2);
   });
 });
@@ -311,6 +370,7 @@ describe("game end, invalid actions, and undo consistency", () => {
       mode: "basic",
       basicColor: "red",
     });
+    state = endTurn(state);
     state = play(state, {
       type: "USE_CARD",
       playerId: "player-2",
@@ -318,6 +378,7 @@ describe("game end, invalid actions, and undo consistency", () => {
       mode: "basic",
       basicColor: "blue",
     });
+    state = endTurn(state);
     const publicState = toPublicState(state);
     expect(publicState.status).toBe("ended");
     expect(publicState.winners.map((winner) => winner.id)).toEqual(["player-1", "player-2"]);
@@ -343,6 +404,29 @@ describe("game end, invalid actions, and undo consistency", () => {
       }).ok
     ).toBe(false);
     expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("rejects ending a turn before using one card and rejects a second card in the same turn", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    expect(applyAction(state, { type: "END_TURN", playerId: "player-1" }).ok).toBe(false);
+    const firstCard = state.players[0].handCards[0];
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: firstCard.instanceId,
+      mode: "basic",
+      basicColor: "red",
+    });
+    const secondCard = state.players[0].handCards[0];
+    expect(
+      applyAction(state, {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: secondCard.instanceId,
+        mode: "basic",
+        basicColor: "blue",
+      }).ok
+    ).toBe(false);
   });
 
   it("can restore a previous snapshot for undo across card, cubes, cities, contribution and world level", () => {

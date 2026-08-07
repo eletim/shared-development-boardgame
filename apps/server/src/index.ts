@@ -107,6 +107,13 @@ const parseAction = (value: unknown): GameAction | null => {
     };
   }
 
+  if (value.type === "END_TURN") {
+    return {
+      type: value.type,
+      playerId: value.playerId,
+    };
+  }
+
   return null;
 };
 

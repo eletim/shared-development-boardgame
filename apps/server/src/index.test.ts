@@ -74,7 +74,9 @@ describe("server API", () => {
       },
     });
     expect(valid.statusCode).toBe(200);
-    expect(valid.json().state.currentPlayerId).toBe("player-2");
+    expect(valid.json().state.currentPlayerId).toBe("player-1");
+    expect(valid.json().state.turnCardUsed).toBe(true);
+    expect(valid.json().state.legal.canEndTurn).toBe(true);
 
     const invalid = await post("/api/game/actions", {
       action: {
@@ -86,7 +88,16 @@ describe("server API", () => {
       },
     });
     expect(invalid.statusCode).toBe(400);
-    expect(invalid.json().state.currentPlayerId).toBe("player-2");
+    expect(invalid.json().state.currentPlayerId).toBe("player-1");
+
+    const ended = await post("/api/game/actions", {
+      action: {
+        type: "END_TURN",
+        playerId: "player-1",
+      },
+    });
+    expect(ended.statusCode).toBe(200);
+    expect(ended.json().state.currentPlayerId).toBe("player-2");
   });
 
   it("supports reset and undo", async () => {
@@ -131,6 +142,10 @@ describe("server API", () => {
             mode: "basic",
             basicColor: "red",
           },
+        });
+        state = await getState();
+        await post("/api/game/actions", {
+          action: { type: "END_TURN", playerId: state.currentPlayerId },
         });
       }
     }

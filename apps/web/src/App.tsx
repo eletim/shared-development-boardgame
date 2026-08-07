@@ -173,6 +173,14 @@ export const App = () => {
     });
   };
 
+  const endTurn = () => {
+    if (!state?.currentPlayerId) return;
+    void sendAction({
+      type: "END_TURN",
+      playerId: state.currentPlayerId,
+    });
+  };
+
   if (!state) {
     return (
       <main className="setup-shell">
@@ -293,9 +301,14 @@ export const App = () => {
           {state.phase === "action" ? (
             <section className="actions">
               <h2>カード手番</h2>
+              {state.turnCardUsed ? <p className="hint">カード使用済み。都市建設後に手番終了できます。</p> : null}
               <label>
                 手札
-                <select value={selectedCardId} onChange={(event) => setSelectedCardId(event.target.value)}>
+                <select
+                  value={selectedCardId}
+                  onChange={(event) => setSelectedCardId(event.target.value)}
+                  disabled={state.turnCardUsed}
+                >
                   {currentPlayer?.handCards.map((card) => (
                     <option key={card.instanceId} value={card.instanceId}>
                       {card.name}
@@ -316,6 +329,7 @@ export const App = () => {
                     key={candidate}
                     className={useMode === candidate ? "selected" : ""}
                     onClick={() => setUseMode(candidate)}
+                    disabled={state.turnCardUsed}
                   >
                     {candidate === "development" ? "固有行動" : candidate === "scoring" ? "得点" : "基本取得"}
                   </button>
@@ -357,6 +371,9 @@ export const App = () => {
 
               <button className="primary wide" onClick={confirmUseCard} disabled={!state.legal.canUseCard || !selectedCardForAction}>
                 カードを使用
+              </button>
+              <button className="secondary wide" onClick={endTurn} disabled={!state.legal.canEndTurn}>
+                手番終了
               </button>
             </section>
           ) : null}

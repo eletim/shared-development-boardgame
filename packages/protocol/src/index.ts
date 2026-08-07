@@ -95,6 +95,7 @@ export type LegalInfo = {
   canDraft: boolean;
   canUseCard: boolean;
   canBuildCity: boolean;
+  canEndTurn: boolean;
   draftPack: CardSummary[];
   buildableIntersectionIds: string[];
 };
@@ -110,6 +111,7 @@ export type PublicGameState = {
   boardCubeTotal: number;
   currentPlayerId: string | null;
   currentPlayerName: string | null;
+  turnCardUsed: boolean;
   draftPickNumber: number;
   players: PlayerSummary[];
   areas: AreaSummary[];
@@ -145,6 +147,10 @@ export type GameAction =
       type: "BUILD_CITY";
       playerId: string;
       intersectionId: string;
+    }
+  | {
+      type: "END_TURN";
+      playerId: string;
     };
 
 export type GameResponse = {
