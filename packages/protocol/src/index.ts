@@ -54,7 +54,14 @@ export type AreaSummary = {
   y: number;
   cubes: CubeCounts;
   cubeTotal: number;
+  areaLevel: 0 | 1 | 2 | 3;
   areaColor: AreaColor;
+};
+
+export type CitySummary = {
+  playerId: string;
+  playerColor: string;
+  level: 1 | 2 | 3;
 };
 
 export type IntersectionSummary = {
@@ -62,7 +69,8 @@ export type IntersectionSummary = {
   x: number;
   y: number;
   adjacentAreaIds: string[];
-  city: { playerId: string; playerColor: string } | null;
+  city: CitySummary | null;
+  cityStack: CitySummary[];
 };
 
 export type ProductionEntry = {
@@ -89,6 +97,8 @@ export type LegalInfo = {
   canEndTurn: boolean;
   draftPack: CardSummary[];
   buildableIntersectionIds: string[];
+  placeableAreaIds: string[];
+  turnEndAreaCapacity: number;
 };
 
 export type PublicGameState = {

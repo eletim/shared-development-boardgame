@@ -27,12 +27,6 @@ const areaColorLabels: Record<AreaColor, string> = {
   neutral: "中立",
 };
 
-const getAreaCapacityForBoardTotal = (boardCubeTotal: number): number => {
-  if (boardCubeTotal <= 13) return 3;
-  if (boardCubeTotal <= 27) return 5;
-  return 7;
-};
-
 const api = async (path: string, body?: unknown): Promise<GameResponse> => {
   const response = await fetch(path, {
     method: body === undefined ? "GET" : "POST",
@@ -84,15 +78,18 @@ export const App = () => {
   }, [state?.currentPlayerId, state?.phase, state?.round]);
 
   const selectedCardForAction = currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ?? null;
-  const endPlacementCapacity = state ? getAreaCapacityForBoardTotal(state.boardCubeTotal + 1) : 0;
+  const endPlacementCapacity = state?.legal.turnEndAreaCapacity ?? 0;
   const selectedEndPlacementArea =
     state?.areas.find((area) => area.id === endPlacementAreaId) ?? null;
-  const placeableAreaIds =
-    state?.areas
-      .filter((area) => area.cubeTotal + 1 <= endPlacementCapacity)
-      .map((area) => area.id) ?? [];
+  const placeableAreaIds = state?.legal.placeableAreaIds ?? [];
   const canPlaceSelectedArea =
-    !!selectedEndPlacementArea && selectedEndPlacementArea.cubeTotal + 1 <= endPlacementCapacity;
+    !!selectedEndPlacementArea && placeableAreaIds.includes(selectedEndPlacementArea.id);
+  const selectedBuildIntersection =
+    state?.intersections.find((intersection) => intersection.id === buildIntersectionId) ?? null;
+  const selectedBuildLevel =
+    selectedBuildIntersection && selectedBuildIntersection.cityStack.length < 3
+      ? selectedBuildIntersection.cityStack.length + 1
+      : null;
 
   const applyResponse = (data: GameResponse) => {
     if (data.state !== undefined) setState(data.state);
@@ -209,7 +206,7 @@ export const App = () => {
           <h1>Hex Cube Cities</h1>
           <p>
             Round {state.round} / {state.maxRounds} · {state.phase === "draft" ? "ドラフト" : state.phase === "action" ? "アクション" : "終了"} · 世界Lv {state.worldLevel} ·
-            都市Lv {state.cityLevel} · 容量 {state.areaCapacity} · 盤面 {state.boardCubeTotal}
+            最大都市Lv {state.cityLevel} · 容量 {state.areaCapacity} · 盤面 {state.boardCubeTotal}
           </p>
         </div>
         <div className="turn-block">
@@ -389,19 +386,21 @@ export const App = () => {
                 <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
                   <option value="">選択</option>
                   {state.intersections
-                    .filter((intersection) => !intersection.city)
                     .map((intersection) => (
                       <option
                         key={intersection.id}
                         value={intersection.id}
                         disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
                       >
-                        {intersection.id}
+                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
+                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
                       </option>
                     ))}
                 </select>
               </label>
-              <p className="hint">コスト: 赤1 青1 黄1。カードは消費しません。</p>
+              <p className="hint">
+                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+              </p>
               <button
                 className="primary wide"
                 onClick={confirmBuild}
@@ -502,7 +501,7 @@ const Board = ({
                 {area.label}
               </text>
               <text x={area.x} y={area.y - 13} className="area-count">
-                {areaColorLabels[area.areaColor]} {area.cubeTotal}/{state.areaCapacity}
+                {areaColorLabels[area.areaColor]} Lv{area.areaLevel} {area.cubeTotal}/{state.areaCapacity}
               </text>
               {cubeColors.map((color, index) => (
                 <g key={color} transform={`translate(${area.x - 38 + index * 38} ${area.y + 24})`}>
@@ -518,20 +517,34 @@ const Board = ({
         {state.intersections.map((intersection) => {
           const legalBuild = state.legal.buildableIntersectionIds.includes(intersection.id);
           const selectable =
-            state.status === "active" && mode === "build" && !intersection.city && legalBuild;
+            state.status === "active" && mode === "build" && legalBuild;
+          const stackLabel = intersection.cityStack.length
+            ? intersection.cityStack.map((city) => `Lv${city.level}`).join(" / ")
+            : "空";
           return (
             <g
               key={intersection.id}
               className={`intersection ${selectable ? "selectable" : ""} ${selectedIntersectionId === intersection.id ? "selected" : ""}`}
               onClick={() => selectable && onIntersectionSelect(intersection.id)}
             >
-              <circle
-                cx={intersection.x}
-                cy={intersection.y}
-                r={intersection.city ? 15 : legalBuild ? 10 : 7}
-                fill={intersection.city?.playerColor ?? "#ffffff"}
-              />
-              <title>{intersection.id}</title>
+              {intersection.cityStack.length === 0 ? (
+                <circle
+                  cx={intersection.x}
+                  cy={intersection.y}
+                  r={legalBuild ? 10 : 7}
+                  fill="#ffffff"
+                />
+              ) : (
+                intersection.cityStack.map((city, index) => (
+                  <g key={`${intersection.id}-${city.level}`} transform={`translate(${intersection.x} ${intersection.y - index * 14})`}>
+                    <rect className="city-stack-block" x="-13" y="-8" width="26" height="14" rx="2" fill={city.playerColor} />
+                    <text className="city-stack-text" y="3">
+                      L{city.level}
+                    </text>
+                  </g>
+                ))
+              )}
+              <title>{intersection.id}: {stackLabel}</title>
             </g>
           );
         })}

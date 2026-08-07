@@ -10,7 +10,7 @@ const card = (instanceId: string, name = "赤の発展"): CardSummary => ({
   name,
   color: "red",
   developmentText: "赤キューブを2個獲得する",
-  scoringText: "赤エリアに隣接する自分の都市数 × 都市Lv",
+  scoringText: "赤エリアとの各接続の 都市Lv × エリアLv",
 });
 
 const baseState = (
@@ -23,7 +23,7 @@ const baseState = (
   maxRounds: 3,
   worldLevel: 1,
   cityLevel: 1,
-  areaCapacity: 3,
+  areaCapacity: 2,
   boardCubeTotal: 0,
   currentPlayerId: "player-1",
   currentPlayerName: "A",
@@ -63,6 +63,7 @@ const baseState = (
       y: 0,
       cubes: { red: 0, blue: 0, yellow: 0 },
       cubeTotal: 0,
+      areaLevel: 0,
       areaColor: "neutral",
     },
   ],
@@ -73,6 +74,7 @@ const baseState = (
       y: -86,
       adjacentAreaIds: ["area-center"],
       city: null,
+      cityStack: [],
     },
   ],
   lastProduction: [
@@ -88,6 +90,8 @@ const baseState = (
     canEndTurn: phase === "action" && turnCardUsed,
     draftPack: phase === "draft" ? [card("draft-1")] : [],
     buildableIntersectionIds: phase === "action" ? ["intersection-01"] : [],
+    placeableAreaIds: phase === "action" && turnCardUsed ? ["area-center"] : [],
+    turnEndAreaCapacity: 2,
   },
   winners: [],
 });
@@ -188,22 +192,27 @@ describe("App", () => {
 
   it("only enables turn-end placement areas that fit the next capacity", async () => {
     const fullArea = baseState("action", true);
-    fullArea.areas[0].cubes = { red: 3, blue: 0, yellow: 0 };
-    fullArea.areas[0].cubeTotal = 3;
-    fullArea.boardCubeTotal = 3;
+    fullArea.areas[0].cubes = { red: 2, blue: 0, yellow: 0 };
+    fullArea.areas[0].cubeTotal = 2;
+    fullArea.areas[0].areaLevel = 1;
+    fullArea.boardCubeTotal = 2;
+    fullArea.legal.placeableAreaIds = [];
     mockFetch([fullArea]);
     const { unmount } = render(<App />);
-    expect(await screen.findByRole("option", { name: "中央 3/3" })).toBeDisabled();
+    expect(await screen.findByRole("option", { name: "中央 2/2" })).toBeDisabled();
     unmount();
 
     const boundaryArea = baseState("action", true);
-    boundaryArea.areas[0].cubes = { red: 3, blue: 0, yellow: 0 };
-    boundaryArea.areas[0].cubeTotal = 3;
+    boundaryArea.areas[0].cubes = { red: 2, blue: 0, yellow: 0 };
+    boundaryArea.areas[0].cubeTotal = 2;
+    boundaryArea.areas[0].areaLevel = 1;
     boundaryArea.boardCubeTotal = 13;
-    boundaryArea.areaCapacity = 3;
+    boundaryArea.areaCapacity = 2;
+    boundaryArea.legal.placeableAreaIds = ["area-center"];
+    boundaryArea.legal.turnEndAreaCapacity = 4;
     mockFetch([boundaryArea]);
     render(<App />);
-    expect(await screen.findByRole("option", { name: "中央 3/5" })).not.toBeDisabled();
+    expect(await screen.findByRole("option", { name: "中央 2/4" })).not.toBeDisabled();
   });
 
   it("shows errors and ended game results", async () => {
