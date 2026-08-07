@@ -5,7 +5,13 @@ import {
   type GameState,
   toPublicState,
 } from "@sdb/game-core";
-import { cubeColors, type GameAction, type GameResponse } from "@sdb/protocol";
+import {
+  cubeColors,
+  type CardUseMode,
+  type CubeColor,
+  type GameAction,
+  type GameResponse,
+} from "@sdb/protocol";
 
 type Session = {
   state: GameState | null;
@@ -30,41 +36,75 @@ const isCubeMap = (value: unknown): value is Record<string, number> => {
   );
 };
 
+const isCubeColor = (value: unknown): value is CubeColor =>
+  typeof value === "string" && cubeColors.includes(value as CubeColor);
+
+const parsePlacement = (value: unknown) => {
+  if (!isRecord(value) || typeof value.areaId !== "string" || !isCubeMap(value.cubes)) {
+    return null;
+  }
+  return { areaId: value.areaId, cubes: value.cubes };
+};
+
+const parseMove = (value: unknown) => {
+  if (
+    !isRecord(value) ||
+    typeof value.fromAreaId !== "string" ||
+    typeof value.toAreaId !== "string" ||
+    !isCubeColor(value.color)
+  ) {
+    return null;
+  }
+  return { fromAreaId: value.fromAreaId, toAreaId: value.toAreaId, color: value.color };
+};
+
 const parseAction = (value: unknown): GameAction | null => {
   if (!isRecord(value) || typeof value.type !== "string" || typeof value.playerId !== "string") {
     return null;
   }
 
-  if (value.type === "TAKE_CUBES" && isCubeMap(value.cubes)) {
-    return { type: value.type, playerId: value.playerId, cubes: value.cubes };
-  }
-  if (
-    value.type === "PLACE_CUBES" &&
-    typeof value.areaId === "string" &&
-    isCubeMap(value.cubes)
-  ) {
+  if (value.type === "DRAFT_PICK" && typeof value.cardInstanceId === "string") {
     return {
       type: value.type,
       playerId: value.playerId,
-      areaId: value.areaId,
-      cubes: value.cubes,
+      cardInstanceId: value.cardInstanceId,
     };
   }
-  if (value.type === "BUILD_CITY" && typeof value.intersectionId === "string" && isRecord(value.payment)) {
-    const payment: Record<string, string> = {};
-    for (const color of cubeColors) {
-      if (typeof value.payment[color] !== "string") return null;
-      payment[color] = value.payment[color];
+
+  if (
+    value.type === "USE_CARD" &&
+    typeof value.cardInstanceId === "string" &&
+    typeof value.mode === "string" &&
+    ["development", "scoring", "basic"].includes(value.mode)
+  ) {
+    const action: Extract<GameAction, { type: "USE_CARD" }> = {
+      type: value.type,
+      playerId: value.playerId,
+      cardInstanceId: value.cardInstanceId,
+      mode: value.mode as CardUseMode,
+    };
+    if (isCubeColor(value.basicColor)) action.basicColor = value.basicColor;
+    if (typeof value.areaId === "string") action.areaId = value.areaId;
+    if (isCubeMap(value.cubes)) action.cubes = value.cubes;
+    if (Array.isArray(value.placements)) {
+      const placements = value.placements.map(parsePlacement);
+      if (placements.some((placement) => !placement)) return null;
+      action.placements = placements as NonNullable<typeof placements[number]>[];
     }
+    if (value.move !== undefined) {
+      const move = parseMove(value.move);
+      if (!move) return null;
+      action.move = move;
+    }
+    return action;
+  }
+
+  if (value.type === "BUILD_CITY" && typeof value.intersectionId === "string") {
     return {
       type: value.type,
       playerId: value.playerId,
       intersectionId: value.intersectionId,
-      payment: payment as Record<(typeof cubeColors)[number], string>,
     };
-  }
-  if (value.type === "PASS") {
-    return { type: value.type, playerId: value.playerId };
   }
 
   return null;

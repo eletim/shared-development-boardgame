@@ -214,7 +214,7 @@ select {
   gap: 14px;
 }
 
-.supply,
+.production,
 .actions,
 .history,
 .results {
@@ -224,7 +224,7 @@ select {
   padding: 14px;
 }
 
-.supply h2,
+.production h2,
 .actions h2,
 .history h2,
 .results h2 {
@@ -232,9 +232,14 @@ select {
   font-size: 18px;
 }
 
+.production p {
+  margin: 8px 0;
+  color: #5b5f56;
+}
+
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 6px;
   margin-bottom: 14px;
 }
@@ -248,6 +253,41 @@ select {
 .action-form {
   display: grid;
   gap: 12px;
+}
+
+.card-list {
+  display: grid;
+  gap: 8px;
+}
+
+.card-button,
+.selected-card {
+  display: grid;
+  gap: 5px;
+  text-align: left;
+  border: 1px solid #d8d9d0;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.card-button {
+  min-height: auto;
+}
+
+.card-button span,
+.selected-card span,
+.hint {
+  color: #5b5f56;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.placement-row {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid #ecede6;
+  padding-top: 10px;
 }
 
 .payment-grid {
@@ -284,6 +324,22 @@ select {
   fill: #eef0e6;
   stroke: #7a806f;
   stroke-width: 2;
+}
+
+.hex.red {
+  fill: #f6d5d2;
+}
+
+.hex.blue {
+  fill: #d8e8ff;
+}
+
+.hex.yellow {
+  fill: #f6e7bb;
+}
+
+.hex.neutral {
+  fill: #eef0e6;
 }
 
 .hex.selectable {

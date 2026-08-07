@@ -8,14 +8,50 @@ export type PartialCubeCounts = Partial<Record<CubeColor, number>>;
 
 export type GameStatus = "active" | "ended";
 
+export type GamePhase = "draft" | "action" | "ended";
+
+export type AreaColor = CubeColor | "neutral";
+
+export type CardType =
+  | "red-development"
+  | "blue-development"
+  | "yellow-development"
+  | "focused-development"
+  | "wide-development"
+  | "redevelopment";
+
+export type CardUseMode = "development" | "scoring" | "basic";
+
+export type CardSummary = {
+  instanceId: string;
+  type: CardType;
+  name: string;
+  color: CubeColor | "multi";
+  developmentText: string;
+  scoringText: string;
+};
+
+export type CubePlacement = {
+  areaId: string;
+  cubes: PartialCubeCounts;
+};
+
+export type CubeMove = {
+  fromAreaId: string;
+  toAreaId: string;
+  color: CubeColor;
+};
+
 export type PlayerSummary = {
   id: string;
   name: string;
   color: string;
-  hand: CubeCounts;
-  handTotal: number;
+  cubes: CubeCounts;
+  cubeTotal: number;
   cityCount: number;
-  turnsTaken: number;
+  contribution: number;
+  finalScore: number;
+  handCards: CardSummary[];
 };
 
 export type AreaSummary = {
@@ -27,6 +63,7 @@ export type AreaSummary = {
   y: number;
   cubes: CubeCounts;
   cubeTotal: number;
+  areaColor: AreaColor;
 };
 
 export type IntersectionSummary = {
@@ -37,39 +74,47 @@ export type IntersectionSummary = {
   city: { playerId: string; playerColor: string } | null;
 };
 
+export type ProductionEntry = {
+  playerId: string;
+  playerName: string;
+  cubes: CubeCounts;
+};
+
 export type ActionLogEntry = {
   id: number;
   round: number;
-  playerId: string;
+  phase: GamePhase;
+  playerId: string | null;
   playerName: string;
-  type: GameAction["type"];
+  type: GameAction["type"] | "ROUND_START" | "GAME_END";
   summary: string;
 };
 
 export type LegalInfo = {
   canUndo: boolean;
-  canPass: boolean;
-  takeOptions: PartialCubeCounts[];
-  placeableAreaIds: string[];
-  buildableIntersections: Array<{
-    intersectionId: string;
-    adjacentAreaIds: string[];
-    missingColors: CubeColor[];
-  }>;
+  canDraft: boolean;
+  canUseCard: boolean;
+  canBuildCity: boolean;
+  draftPack: CardSummary[];
+  buildableIntersectionIds: string[];
 };
 
 export type PublicGameState = {
   status: GameStatus;
+  phase: GamePhase;
   round: number;
   maxRounds: number;
-  phase: 1 | 2 | 3;
+  worldLevel: 1 | 2 | 3;
+  cityLevel: 1 | 2 | 3;
   areaCapacity: number;
+  boardCubeTotal: number;
   currentPlayerId: string | null;
   currentPlayerName: string | null;
+  draftPickNumber: number;
   players: PlayerSummary[];
-  supply: CubeCounts;
   areas: AreaSummary[];
   intersections: IntersectionSummary[];
+  lastProduction: ProductionEntry[];
   history: ActionLogEntry[];
   legal: LegalInfo;
   winners: PlayerSummary[];
@@ -81,25 +126,25 @@ export type StartGameRequest = {
 
 export type GameAction =
   | {
-      type: "TAKE_CUBES";
+      type: "DRAFT_PICK";
       playerId: string;
-      cubes: PartialCubeCounts;
+      cardInstanceId: string;
     }
   | {
-      type: "PLACE_CUBES";
+      type: "USE_CARD";
       playerId: string;
-      areaId: string;
-      cubes: PartialCubeCounts;
+      cardInstanceId: string;
+      mode: CardUseMode;
+      basicColor?: CubeColor;
+      areaId?: string;
+      cubes?: PartialCubeCounts;
+      placements?: CubePlacement[];
+      move?: CubeMove;
     }
   | {
       type: "BUILD_CITY";
       playerId: string;
       intersectionId: string;
-      payment: Record<CubeColor, string>;
-    }
-  | {
-      type: "PASS";
-      playerId: string;
     };
 
 export type GameResponse = {

@@ -11,6 +11,28 @@ const post = async (url: string, payload: unknown = {}) =>
     payload: payload as any,
   });
 
+const getState = async () => {
+  const response = await server.inject({ method: "GET", url: "/api/game" });
+  return response.json().state;
+};
+
+const draftAll = async () => {
+  let state = await getState();
+  while (state.phase === "draft") {
+    const card = state.legal.draftPack[0];
+    const response = await post("/api/game/actions", {
+      action: {
+        type: "DRAFT_PICK",
+        playerId: state.currentPlayerId,
+        cardInstanceId: card.instanceId,
+      },
+    });
+    expect(response.statusCode).toBe(200);
+    state = response.json().state;
+  }
+  return state;
+};
+
 describe("server API", () => {
   beforeEach(async () => {
     server = createServer();
@@ -21,28 +43,47 @@ describe("server API", () => {
     await server.close();
   });
 
-  it("starts a game and returns public state", async () => {
+  it("starts a game and returns draft public state", async () => {
     const response = await post("/api/game/start", { playerNames: ["A", "B"] });
     expect(response.statusCode).toBe(200);
-    expect(response.json().state.players).toHaveLength(2);
+    const state = response.json().state;
+    expect(state.players).toHaveLength(2);
+    expect(state.phase).toBe("draft");
+    expect(state.legal.draftPack).toHaveLength(8);
   });
 
   it("rejects API calls before the game starts", async () => {
     const response = await post("/api/game/actions", {
-      action: { type: "PASS", playerId: "player-1" },
+      action: { type: "DRAFT_PICK", playerId: "player-1", cardInstanceId: "missing" },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toContain("開始");
   });
 
-  it("applies a valid action and rejects a representative invalid action", async () => {
+  it("applies draft and card actions and rejects representative invalid input", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
+    const actionState = await draftAll();
+    const card = actionState.players[0].handCards[0];
     const valid = await post("/api/game/actions", {
-      action: { type: "TAKE_CUBES", playerId: "player-1", cubes: { red: 1, blue: 1, yellow: 1 } },
+      action: {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: card.instanceId,
+        mode: "basic",
+        basicColor: "red",
+      },
     });
     expect(valid.statusCode).toBe(200);
+    expect(valid.json().state.currentPlayerId).toBe("player-2");
+
     const invalid = await post("/api/game/actions", {
-      action: { type: "TAKE_CUBES", playerId: "player-1", cubes: { red: 1, blue: 1, yellow: 1 } },
+      action: {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: card.instanceId,
+        mode: "basic",
+        basicColor: "red",
+      },
     });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json().state.currentPlayerId).toBe("player-2");
@@ -50,26 +91,53 @@ describe("server API", () => {
 
   it("supports reset and undo", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
+    const state = await getState();
     await post("/api/game/actions", {
-      action: { type: "PASS", playerId: "player-1" },
+      action: {
+        type: "DRAFT_PICK",
+        playerId: state.currentPlayerId,
+        cardInstanceId: state.legal.draftPack[0].instanceId,
+      },
     });
     const undone = await post("/api/game/undo");
     expect(undone.statusCode).toBe(200);
     expect(undone.json().state.currentPlayerId).toBe("player-1");
+    expect(undone.json().state.legal.draftPack).toHaveLength(8);
     const reset = await post("/api/game/reset");
     expect(reset.statusCode).toBe(200);
     expect(reset.json().state.round).toBe(1);
+    expect(reset.json().state.phase).toBe("draft");
   });
 
   it("rejects actions after the game ended", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
-    for (let index = 0; index < 24; index += 1) {
-      const current = await server.inject({ method: "GET", url: "/api/game" });
-      const playerId = current.json().state.currentPlayerId;
-      await post("/api/game/actions", { action: { type: "PASS", playerId } });
+    let state = await draftAll();
+    for (let guard = 0; guard < 120; guard += 1) {
+      state = await getState();
+      if (state.status === "ended") break;
+      if (state.phase === "draft") {
+        const card = state.legal.draftPack[0];
+        await post("/api/game/actions", {
+          action: { type: "DRAFT_PICK", playerId: state.currentPlayerId, cardInstanceId: card.instanceId },
+        });
+      } else {
+        const current = state.players.find((player: any) => player.id === state.currentPlayerId);
+        const card = current.handCards[0];
+        await post("/api/game/actions", {
+          action: {
+            type: "USE_CARD",
+            playerId: state.currentPlayerId,
+            cardInstanceId: card.instanceId,
+            mode: "basic",
+            basicColor: "red",
+          },
+        });
+      }
     }
+    state = await getState();
+    expect(state.status).toBe("ended");
     const response = await post("/api/game/actions", {
-      action: { type: "PASS", playerId: "player-1" },
+      action: { type: "BUILD_CITY", playerId: "player-1", intersectionId: "intersection-01" },
     });
     expect(response.statusCode).toBe(400);
     expect(response.json().error).toContain("終了");
