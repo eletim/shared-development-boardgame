@@ -1,8 +1,9 @@
 # shared-development-boardgame
 
 Hex Cube Cities is a local hot-seat board game prototype for 2-4 human players.
-Players take cubes from a shared supply, place cubes into shared hex areas, and
-spend adjacent shared cubes to build cities on shared intersections.
+Players draft cards, use each card as one turn, place shared cubes into hex
+areas, build owned cities on shared intersections, and let those cities produce
+next round's cubes from adjacent area colors.
 
 ## Requirements
 
@@ -63,71 +64,116 @@ pnpm lint
 - Shared intersections are deduplicated; a shared vertex is one build location
   with one stable intersection ID and 1-3 adjacent area IDs.
 - Cubes have three colors: red, blue, and yellow.
-- The shared supply starts with 15 cubes of each color.
-- Cubes are always in exactly one place: supply, a player's hand, or a hex area.
-- Each player can hold up to 10 cubes.
-- One turn performs exactly one action: take cubes, place cubes, build a city, or
-  pass.
-- Valid actions automatically advance to the next player. Invalid actions do not
-  change state or advance the turn.
+- Cubes have no owner on the board. They are owned only while in a player's hand.
+- The common cube supply is treated as effectively unlimited for playtesting.
+- One card use is one action turn. Pass and independent cube-taking actions are
+  not part of the current rule set.
+- City building is not a card action. During the current player's action turn,
+  they may build any number of cities as long as they can pay the cost.
+- Each action turn must use exactly one card before it can end. City builds may
+  happen before or after that card use. Ending the turn advances to the next
+  player with cards.
+- Valid city builds do not advance the turn. Invalid actions do not change state
+  or advance the turn.
 - The server is the source of truth for game state and rule validation.
 
-## Phases
+## Area Color
 
-The current phase is derived from total built cities.
+Area color uses the tied-majority-loses rule:
 
-| Phase | Total cities | Area capacity |
-| --- | ---: | ---: |
-| 1 | 0-3 | 3 |
-| 2 | 4-7 | 5 |
-| 3 | 8+ | 7 |
+- A single highest color wins.
+- If two colors tie for highest, those colors are ignored and the remaining
+  color wins if it has at least one cube.
+- If all three colors tie, or no remaining color has cubes, the area is neutral.
+
+Area color is recalculated immediately whenever board cubes change.
+
+## World Level
+
+World level is derived from the total number of shared cubes on the board.
+
+| World level | Board cubes | Area capacity | City level |
+| --- | ---: | ---: | ---: |
+| 1 | 0-13 | 3 | 1 |
+| 2 | 14-27 | 5 | 2 |
+| 3 | 28+ | 7 | 3 |
 
 Area capacity is the total number of cubes in an area, not a per-color limit.
 
-## Actions
+## Round Structure
 
-### Take Cubes
+The game lasts three rounds.
 
-Choose one of:
+1. City production
+2. Draft
+3. Action phase
+4. When every hand is empty and the active turn ends, start the next round or
+   end the game
 
-- one red, one blue, and one yellow cube
-- two cubes of the same color
+At the start of each round, before draft, every city produces cubes
+simultaneously:
 
-Taking two of one color requires at least four cubes of that color in the shared
-supply. The action cannot exceed the hand limit of 10 cubes.
+```text
+production = current city level * adjacent area count of that color
+```
 
-### Place Cubes
+Neutral adjacent areas produce nothing. Multiple cities are summed.
 
-Place 1-3 cubes from the current player's hand into one hex area. Colors can be
-mixed. Placed cubes become shared and keep no owner.
+## Draft
 
-### Build City
+Each round deals 8 cards per player. Players pick one card from their current
+pack, then remaining cards rotate to the next player. Draft continues until each
+player has 8 cards. Cards are public in this prototype.
 
-Choose an empty intersection and pay one red, one blue, and one yellow cube from
-areas adjacent to that intersection. Each color's payment source is selected
-separately. Paid cubes return to the shared supply, then the current player's
-city is placed on the intersection.
+## Card Uses
 
-### Pass
+Every action turn must consume exactly one hand card. Each card can be used in
+one of three ways:
 
-Pass is always legal while the game is active.
+- Use the card's development or production action.
+- Use the card's scoring action to gain immediate contribution.
+- Ignore the printed card effect and take one cube of any color.
+
+Initial card types:
+
+- Red development: place up to 3 red cubes into one area; score red areas.
+- Blue development: place up to 3 blue cubes into one area; score blue areas.
+- Yellow development: place up to 3 yellow cubes into one area; score yellow
+  areas.
+- Focused development: place up to 4 cubes of any colors into one area; score
+  full areas.
+- Wide development: place up to 3 cubes of any colors across multiple areas;
+  score colored areas adjacent to your cities.
+- Redevelopment: move one board cube to an adjacent area, then optionally place
+  up to 2 cubes; score neutral areas.
+
+## Cities
+
+Build a city on any empty intersection by paying one red, one blue, and one
+yellow cube from the current player's hand. Paid cubes return to the unlimited
+common supply and do not affect board cube totals.
+
+Each owned city is worth 1 contribution at game end.
 
 ## End Game
 
-The game ends after every player has taken 12 turns. All players take the same
-number of turns. The player or players with the most cities win; tied winners are
-shown without additional tie-breakers.
+The game ends after round 3 when every player's hand is empty. Final contribution
+is card-scoring contribution plus owned city count. The player or players with
+the highest final contribution win; tied winners are shared.
 
 ## Controls
 
 - Start a new game from the setup screen with 2-4 display names.
-- Use the action tabs to take, place, build, or pass.
-- In place mode, select an area from the form or click a highlighted hex.
-- In build mode, select an intersection from the form or click a highlighted
-  intersection, then choose the payment source for red, blue, and yellow.
-- Undo restores the full state before the most recent successful turn action.
+- During draft, click a card from the current pack.
+- During action phase, choose a hand card and one of its three uses.
+- Use the city build panel before or after card use while the current player can
+  pay the city cost.
+- Click the turn-end button after the card use and any city builds for that
+  turn.
+- Undo restores the full state before the most recent successful action.
 - Reset restarts the current player set from the initial state.
-- Recent action history and server-side errors are shown beside the board.
+- Recent action history, city production, final results, and server-side errors
+  are shown beside the board.
 
 ## API
 
@@ -147,8 +193,7 @@ The web app calls the server API only. It does not import `game-core` directly.
 
 - roads
 - city distance or adjacency restrictions
-- facility cards, technologies, area powers, decks, random events, or hidden
-  information
+- facility cards, technologies, area powers, random events, or hidden information
 - AI players
 - online multiplayer, WebSocket synchronization, authentication, persistence,
   database storage, matchmaking, or multiple simultaneous games

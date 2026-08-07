@@ -2,37 +2,57 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
-import { type PublicGameState } from "@sdb/protocol";
+import { type CardSummary, type PublicGameState } from "@sdb/protocol";
 
-const baseState = (): PublicGameState => ({
+const card = (instanceId: string, name = "赤の発展"): CardSummary => ({
+  instanceId,
+  type: "red-development",
+  name,
+  color: "red",
+  developmentText: "手元の赤キューブを最大3個、1つのエリアへ置く",
+  scoringText: "現在の赤エリア1つにつき1貢献度",
+});
+
+const baseState = (
+  phase: PublicGameState["phase"] = "draft",
+  turnCardUsed = false
+): PublicGameState => ({
   status: "active",
+  phase,
   round: 1,
-  maxRounds: 12,
-  phase: 1,
+  maxRounds: 3,
+  worldLevel: 1,
+  cityLevel: 1,
   areaCapacity: 3,
+  boardCubeTotal: 0,
   currentPlayerId: "player-1",
   currentPlayerName: "A",
+  turnCardUsed,
+  draftPickNumber: 1,
   players: [
     {
       id: "player-1",
       name: "A",
       color: "#d73a31",
-      hand: { red: 1, blue: 1, yellow: 1 },
-      handTotal: 3,
+      cubes: { red: 1, blue: 1, yellow: 1 },
+      cubeTotal: 3,
       cityCount: 0,
-      turnsTaken: 0,
+      contribution: 0,
+      finalScore: 0,
+      handCards: phase === "action" ? [card("hand-1")] : [],
     },
     {
       id: "player-2",
       name: "B",
       color: "#1f6feb",
-      hand: { red: 0, blue: 0, yellow: 0 },
-      handTotal: 0,
+      cubes: { red: 0, blue: 0, yellow: 0 },
+      cubeTotal: 0,
       cityCount: 0,
-      turnsTaken: 0,
+      contribution: 0,
+      finalScore: 0,
+      handCards: [],
     },
   ],
-  supply: { red: 14, blue: 14, yellow: 14 },
   areas: [
     {
       id: "area-center",
@@ -41,8 +61,9 @@ const baseState = (): PublicGameState => ({
       r: 0,
       x: 0,
       y: 0,
-      cubes: { red: 1, blue: 1, yellow: 1 },
-      cubeTotal: 3,
+      cubes: { red: 0, blue: 0, yellow: 0 },
+      cubeTotal: 0,
+      areaColor: "neutral",
     },
   ],
   intersections: [
@@ -54,24 +75,24 @@ const baseState = (): PublicGameState => ({
       city: null,
     },
   ],
+  lastProduction: [
+    { playerId: "player-1", playerName: "A", cubes: { red: 0, blue: 0, yellow: 0 } },
+    { playerId: "player-2", playerName: "B", cubes: { red: 0, blue: 0, yellow: 0 } },
+  ],
   history: [],
   legal: {
     canUndo: false,
-    canPass: true,
-    takeOptions: [{ red: 1, blue: 1, yellow: 1 }],
-    placeableAreaIds: ["area-center"],
-    buildableIntersections: [
-      {
-        intersectionId: "intersection-01",
-        adjacentAreaIds: ["area-center"],
-        missingColors: [],
-      },
-    ],
+    canDraft: phase === "draft",
+    canUseCard: phase === "action" && !turnCardUsed,
+    canBuildCity: phase === "action",
+    canEndTurn: phase === "action" && turnCardUsed,
+    draftPack: phase === "draft" ? [card("draft-1")] : [],
+    buildableIntersectionIds: phase === "action" ? ["intersection-01"] : [],
   },
   winners: [],
 });
 
-const mockFetch = (states: PublicGameState[]) => {
+const mockFetch = (states: Array<PublicGameState | null>) => {
   let index = 0;
   vi.stubGlobal(
     "fetch",
@@ -93,51 +114,70 @@ const lastRequestInit = (mock: ReturnType<typeof vi.fn>): RequestInit => {
 
 describe("App", () => {
   it("starts a game from the setup screen", async () => {
-    mockFetch([null as unknown as PublicGameState, baseState()]);
+    mockFetch([null, baseState()]);
     render(<App />);
     await screen.findByRole("button", { name: "ゲーム開始" });
     await userEvent.click(screen.getByRole("button", { name: "ゲーム開始" }));
-    expect(await screen.findByText(/Round 1 \/ 12/)).toBeInTheDocument();
+    expect(await screen.findByText(/Round 1 \/ 3/)).toBeInTheDocument();
   });
 
   it("returns from an active game to the setup screen for a new game", async () => {
     mockFetch([baseState()]);
     render(<App />);
-    await screen.findByText(/Round 1 \/ 12/);
+    await screen.findByText(/Round 1 \/ 3/);
     await userEvent.click(screen.getByRole("button", { name: "New game" }));
     expect(screen.getByRole("button", { name: "ゲーム開始" })).toBeInTheDocument();
   });
 
-  it("sends take, place and build actions from the controls", async () => {
+  it("sends draft, card use, and build actions from the controls", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
-      json: async () => ({ state: baseState() }),
+      json: async () => ({ state: baseState("action") }),
     }));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await screen.findByText(/Round 1 \/ 12/);
+    await screen.findByText(/カード手番/);
 
-    await userEvent.click(screen.getByRole("button", { name: "確定" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("TAKE_CUBES");
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "基本取得" }));
+    await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("USE_CARD");
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("basic");
 
-    await userEvent.click(screen.getByRole("button", { name: "置く" }));
-    await userEvent.selectOptions(screen.getByLabelText("エリア"), "area-center");
-    await userEvent.clear(screen.getByLabelText("赤"));
-    await userEvent.type(screen.getByLabelText("赤"), "1");
-    await userEvent.click(screen.getByRole("button", { name: "確定" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("PLACE_CUBES");
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action") }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "手番終了" }));
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("END_TURN");
 
-    await userEvent.click(screen.getByRole("button", { name: "建設" }));
     await userEvent.selectOptions(screen.getByLabelText("交点"), "intersection-01");
-    await userEvent.selectOptions(screen.getByLabelText("赤"), "area-center");
-    await userEvent.selectOptions(screen.getByLabelText("青"), "area-center");
-    await userEvent.selectOptions(screen.getByLabelText("黄"), "area-center");
-    await userEvent.click(screen.getByRole("button", { name: "確定" }));
+    await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));
     expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("BUILD_CITY");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("draft") }),
+    });
+  });
+
+  it("sends draft pick actions", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: baseState("draft") }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText(/ドラフト 1 \/ 8/);
+    await userEvent.click(screen.getByRole("button", { name: /赤の発展/ }));
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("DRAFT_PICK");
   });
 
   it("shows errors and ended game results", async () => {
-    const ended = baseState();
+    const ended = baseState("ended");
     ended.status = "ended";
     ended.currentPlayerId = null;
     ended.currentPlayerName = null;
