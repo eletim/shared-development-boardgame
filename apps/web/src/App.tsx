@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { RotateCcw, Undo2, UserPlus } from "lucide-react";
 import {
   cubeColors,
@@ -6,15 +6,13 @@ import {
   type CardSummary,
   type CardUseMode,
   type CubeColor,
-  type CubeCounts,
-  type CubePlacement,
   type GameAction,
   type GameResponse,
   type PartialCubeCounts,
   type PublicGameState,
 } from "@sdb/protocol";
 
-type BoardMode = "development" | "build" | "none";
+type BoardMode = "placement" | "build" | "none";
 
 const colorLabels: Record<CubeColor, string> = {
   red: "赤",
@@ -27,6 +25,12 @@ const areaColorLabels: Record<AreaColor, string> = {
   blue: "青",
   yellow: "黄",
   neutral: "中立",
+};
+
+const getAreaCapacityForBoardTotal = (boardCubeTotal: number): number => {
+  if (boardCubeTotal <= 13) return 3;
+  if (boardCubeTotal <= 27) return 5;
+  return 7;
 };
 
 const api = async (path: string, body?: unknown): Promise<GameResponse> => {
@@ -42,22 +46,11 @@ const api = async (path: string, body?: unknown): Promise<GameResponse> => {
   return data;
 };
 
-const emptyCounts = (): CubeCounts => ({ red: 0, blue: 0, yellow: 0 });
-
 const formatCubes = (cubes: PartialCubeCounts): string =>
   cubeColors
     .filter((color) => (cubes[color] ?? 0) > 0)
     .map((color) => `${colorLabels[color]}${cubes[color]}`)
     .join(" ");
-
-const cubeTotal = (cubes: PartialCubeCounts): number =>
-  cubeColors.reduce((total, color) => total + (cubes[color] ?? 0), 0);
-
-const defaultPlacements = (): CubePlacement[] => [
-  { areaId: "", cubes: emptyCounts() },
-  { areaId: "", cubes: emptyCounts() },
-  { areaId: "", cubes: emptyCounts() },
-];
 
 export const App = () => {
   const [state, setState] = useState<PublicGameState | null>(null);
@@ -67,12 +60,8 @@ export const App = () => {
   const [selectedCardId, setSelectedCardId] = useState("");
   const [useMode, setUseMode] = useState<CardUseMode>("development");
   const [basicColor, setBasicColor] = useState<CubeColor>("red");
-  const [areaId, setAreaId] = useState("");
-  const [cubes, setCubes] = useState<CubeCounts>(emptyCounts);
-  const [placements, setPlacements] = useState<CubePlacement[]>(defaultPlacements);
-  const [moveColor, setMoveColor] = useState<CubeColor>("red");
-  const [moveFromAreaId, setMoveFromAreaId] = useState("");
-  const [moveToAreaId, setMoveToAreaId] = useState("");
+  const [endPlacementAreaId, setEndPlacementAreaId] = useState("");
+  const [endPlacementColor, setEndPlacementColor] = useState<CubeColor>("red");
   const [buildIntersectionId, setBuildIntersectionId] = useState("");
 
   useEffect(() => {
@@ -83,28 +72,27 @@ export const App = () => {
   }, []);
 
   const currentPlayer = state?.players.find((player) => player.id === state.currentPlayerId) ?? null;
-  const selectedCard = currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ?? null;
-  const isWideDevelopment = selectedCard?.type === "wide-development";
-  const isRedevelopment = selectedCard?.type === "redevelopment";
 
   useEffect(() => {
     const firstCard = currentPlayer?.handCards[0]?.instanceId ?? "";
     setSelectedCardId(firstCard);
     setUseMode("development");
     setBasicColor("red");
-    setAreaId("");
-    setCubes(emptyCounts());
-    setPlacements(defaultPlacements());
-    setMoveColor("red");
-    setMoveFromAreaId("");
-    setMoveToAreaId("");
+    setEndPlacementAreaId("");
+    setEndPlacementColor("red");
     setBuildIntersectionId("");
   }, [state?.currentPlayerId, state?.phase, state?.round]);
 
-  const selectedCardForAction = useMemo(
-    () => currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ?? null,
-    [currentPlayer, selectedCardId]
-  );
+  const selectedCardForAction = currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ?? null;
+  const endPlacementCapacity = state ? getAreaCapacityForBoardTotal(state.boardCubeTotal + 1) : 0;
+  const selectedEndPlacementArea =
+    state?.areas.find((area) => area.id === endPlacementAreaId) ?? null;
+  const placeableAreaIds =
+    state?.areas
+      .filter((area) => area.cubeTotal + 1 <= endPlacementCapacity)
+      .map((area) => area.id) ?? [];
+  const canPlaceSelectedArea =
+    !!selectedEndPlacementArea && selectedEndPlacementArea.cubeTotal + 1 <= endPlacementCapacity;
 
   const applyResponse = (data: GameResponse) => {
     if (data.state !== undefined) setState(data.state);
@@ -148,19 +136,6 @@ export const App = () => {
       mode: useMode,
     };
     if (useMode === "basic") action.basicColor = basicColor;
-    if (useMode === "development") {
-      if (isWideDevelopment) {
-        action.placements = placements.filter((placement) => placement.areaId && cubeTotal(placement.cubes) > 0);
-      } else if (isRedevelopment) {
-        action.move = { fromAreaId: moveFromAreaId, toAreaId: moveToAreaId, color: moveColor };
-        action.placements = placements
-          .slice(0, 2)
-          .filter((placement) => placement.areaId && cubeTotal(placement.cubes) > 0);
-      } else {
-        action.areaId = areaId;
-        action.cubes = cubes;
-      }
-    }
     void sendAction(action);
   };
 
@@ -173,12 +148,19 @@ export const App = () => {
     });
   };
 
-  const endTurn = () => {
+  const endTurn = (withPlacement: boolean) => {
     if (!state?.currentPlayerId) return;
-    void sendAction({
+    const action: Extract<GameAction, { type: "END_TURN" }> = {
       type: "END_TURN",
       playerId: state.currentPlayerId,
-    });
+    };
+    if (withPlacement) {
+      action.placement = {
+        areaId: endPlacementAreaId,
+        color: endPlacementColor,
+      };
+    }
+    void sendAction(action);
   };
 
   if (!state) {
@@ -331,7 +313,7 @@ export const App = () => {
                     onClick={() => setUseMode(candidate)}
                     disabled={state.turnCardUsed}
                   >
-                    {candidate === "development" ? "固有行動" : candidate === "scoring" ? "得点" : "基本取得"}
+                    {candidate === "development" ? "生産" : candidate === "scoring" ? "得点" : "基本取得"}
                   </button>
                 ))}
               </div>
@@ -349,31 +331,52 @@ export const App = () => {
                 </label>
               ) : null}
 
-              {useMode === "development" && selectedCardForAction ? (
-                <DevelopmentForm
-                  card={selectedCardForAction}
-                  state={state}
-                  currentCubes={currentPlayer?.cubes ?? emptyCounts()}
-                  areaId={areaId}
-                  setAreaId={setAreaId}
-                  cubes={cubes}
-                  setCubes={setCubes}
-                  placements={placements}
-                  setPlacements={setPlacements}
-                  moveColor={moveColor}
-                  setMoveColor={setMoveColor}
-                  moveFromAreaId={moveFromAreaId}
-                  setMoveFromAreaId={setMoveFromAreaId}
-                  moveToAreaId={moveToAreaId}
-                  setMoveToAreaId={setMoveToAreaId}
-                />
-              ) : null}
-
               <button className="primary wide" onClick={confirmUseCard} disabled={!state.legal.canUseCard || !selectedCardForAction}>
                 カードを使用
               </button>
-              <button className="secondary wide" onClick={endTurn} disabled={!state.legal.canEndTurn}>
-                手番終了
+            </section>
+          ) : null}
+
+          {state.phase === "action" && state.turnCardUsed ? (
+            <section className="actions">
+              <h2>ターン終了時配置</h2>
+              <div className="payment-grid">
+                <label>
+                  色
+                  <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
+                    {cubeColors.map((color) => (
+                      <option key={color} value={color}>
+                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  エリア
+                  <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
+                    <option value="">選択</option>
+                    {state.areas.map((area) => (
+                      <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
+                        {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <button
+                className="primary wide"
+                onClick={() => endTurn(true)}
+                disabled={
+                  !state.legal.canEndTurn ||
+                  !endPlacementAreaId ||
+                  !canPlaceSelectedArea ||
+                  (currentPlayer?.cubes[endPlacementColor] ?? 0) < 1
+                }
+              >
+                1個置いて手番終了
+              </button>
+              <button className="secondary wide" onClick={() => endTurn(false)} disabled={!state.legal.canEndTurn}>
+                置かずに手番終了
               </button>
             </section>
           ) : null}
@@ -418,10 +421,11 @@ export const App = () => {
 
         <Board
           state={state}
-          mode={useMode === "development" ? "development" : "build"}
-          selectedAreaId={areaId}
+          mode={state.turnCardUsed ? "placement" : "build"}
+          selectedAreaId={endPlacementAreaId}
           selectedIntersectionId={buildIntersectionId}
-          onAreaSelect={setAreaId}
+          placeableAreaIds={placeableAreaIds}
+          onAreaSelect={setEndPlacementAreaId}
           onIntersectionSelect={setBuildIntersectionId}
         />
 
@@ -453,208 +457,12 @@ export const App = () => {
   );
 };
 
-const DevelopmentForm = ({
-  card,
-  state,
-  currentCubes,
-  areaId,
-  setAreaId,
-  cubes,
-  setCubes,
-  placements,
-  setPlacements,
-  moveColor,
-  setMoveColor,
-  moveFromAreaId,
-  setMoveFromAreaId,
-  moveToAreaId,
-  setMoveToAreaId,
-}: {
-  card: CardSummary;
-  state: PublicGameState;
-  currentCubes: CubeCounts;
-  areaId: string;
-  setAreaId: (areaId: string) => void;
-  cubes: CubeCounts;
-  setCubes: (cubes: CubeCounts) => void;
-  placements: CubePlacement[];
-  setPlacements: (placements: CubePlacement[]) => void;
-  moveColor: CubeColor;
-  setMoveColor: (color: CubeColor) => void;
-  moveFromAreaId: string;
-  setMoveFromAreaId: (areaId: string) => void;
-  moveToAreaId: string;
-  setMoveToAreaId: (areaId: string) => void;
-}) => {
-  if (card.type === "wide-development") {
-    return (
-      <div className="action-form">
-        {placements.map((placement, index) => (
-          <PlacementRow
-            key={index}
-            index={index}
-            state={state}
-            placement={placement}
-            currentCubes={currentCubes}
-            onChange={(nextPlacement) => {
-              const next = [...placements];
-              next[index] = nextPlacement;
-              setPlacements(next);
-            }}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  if (card.type === "redevelopment") {
-    return (
-      <div className="action-form">
-        <div className="payment-grid">
-          <label>
-            移動元
-            <select value={moveFromAreaId} onChange={(event) => setMoveFromAreaId(event.target.value)}>
-              <option value="">選択</option>
-              {state.areas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {area.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            移動先
-            <select value={moveToAreaId} onChange={(event) => setMoveToAreaId(event.target.value)}>
-              <option value="">選択</option>
-              {state.areas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {area.label} {area.cubeTotal}/{state.areaCapacity}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            色
-            <select value={moveColor} onChange={(event) => setMoveColor(event.target.value as CubeColor)}>
-              {cubeColors.map((color) => (
-                <option key={color} value={color}>
-                  {colorLabels[color]}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {placements.slice(0, 2).map((placement, index) => (
-          <PlacementRow
-            key={index}
-            index={index}
-            state={state}
-            placement={placement}
-            currentCubes={currentCubes}
-            onChange={(nextPlacement) => {
-              const next = [...placements];
-              next[index] = nextPlacement;
-              setPlacements(next);
-            }}
-          />
-        ))}
-      </div>
-    );
-  }
-
-  const fixedColor = card.color === "red" || card.color === "blue" || card.color === "yellow"
-    ? card.color
-    : null;
-  const maxByColor = fixedColor
-    ? { red: 0, blue: 0, yellow: 0, [fixedColor]: currentCubes[fixedColor] }
-    : currentCubes;
-
-  return (
-    <div className="action-form">
-      <label>
-        エリア
-        <select value={areaId} onChange={(event) => setAreaId(event.target.value)}>
-          <option value="">選択</option>
-          {state.areas.map((area) => (
-            <option key={area.id} value={area.id}>
-              {area.label} {area.cubeTotal}/{state.areaCapacity}
-            </option>
-          ))}
-        </select>
-      </label>
-      <CubeInputs counts={cubes} setCounts={setCubes} maxByColor={maxByColor} />
-    </div>
-  );
-};
-
-const PlacementRow = ({
-  index,
-  state,
-  placement,
-  currentCubes,
-  onChange,
-}: {
-  index: number;
-  state: PublicGameState;
-  placement: CubePlacement;
-  currentCubes: CubeCounts;
-  onChange: (placement: CubePlacement) => void;
-}) => (
-  <div className="placement-row">
-    <label>
-      配置 {index + 1}
-      <select value={placement.areaId} onChange={(event) => onChange({ ...placement, areaId: event.target.value })}>
-        <option value="">なし</option>
-        {state.areas.map((area) => (
-          <option key={area.id} value={area.id}>
-            {area.label} {area.cubeTotal}/{state.areaCapacity}
-          </option>
-        ))}
-      </select>
-    </label>
-    <CubeInputs
-      counts={{ red: placement.cubes.red ?? 0, blue: placement.cubes.blue ?? 0, yellow: placement.cubes.yellow ?? 0 }}
-      setCounts={(counts) => onChange({ ...placement, cubes: counts })}
-      maxByColor={currentCubes}
-    />
-  </div>
-);
-
-const CubeInputs = ({
-  counts,
-  setCounts,
-  maxByColor,
-}: {
-  counts: CubeCounts;
-  setCounts: (counts: CubeCounts) => void;
-  maxByColor: CubeCounts;
-}) => (
-  <div className="payment-grid">
-    {cubeColors.map((color) => (
-      <label key={color}>
-        {colorLabels[color]}
-        <input
-          type="number"
-          min={0}
-          max={maxByColor[color]}
-          value={counts[color]}
-          onChange={(event) =>
-            setCounts({
-              ...counts,
-              [color]: Number(event.target.value),
-            })
-          }
-        />
-      </label>
-    ))}
-  </div>
-);
-
 const Board = ({
   state,
   mode,
   selectedAreaId,
   selectedIntersectionId,
+  placeableAreaIds,
   onAreaSelect,
   onIntersectionSelect,
 }: {
@@ -662,6 +470,7 @@ const Board = ({
   mode: BoardMode;
   selectedAreaId: string;
   selectedIntersectionId: string;
+  placeableAreaIds: string[];
   onAreaSelect: (id: string) => void;
   onIntersectionSelect: (id: string) => void;
 }) => {
@@ -680,7 +489,8 @@ const Board = ({
             const angle = ((30 + index * 60) * Math.PI) / 180;
             return `${area.x + 86 * Math.cos(angle)},${area.y + 86 * Math.sin(angle)}`;
           }).join(" ");
-          const selectable = state.status === "active" && mode === "development";
+          const selectable =
+            state.status === "active" && mode === "placement" && placeableAreaIds.includes(area.id);
           return (
             <g key={area.id}>
               <polygon

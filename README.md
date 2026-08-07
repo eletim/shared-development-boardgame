@@ -73,6 +73,8 @@ pnpm lint
 - Each action turn must use exactly one card before it can end. City builds may
   happen before or after that card use. Ending the turn advances to the next
   player with cards.
+- After the card use, the current player may place exactly one hand cube into
+  one area while ending the turn, or skip placement.
 - Valid city builds do not advance the turn. Invalid actions do not change state
   or advance the turn.
 - The server is the source of truth for game state and rule validation.
@@ -136,16 +138,29 @@ one of three ways:
 
 Initial card types:
 
-- Red development: place up to 3 red cubes into one area; score red areas.
-- Blue development: place up to 3 blue cubes into one area; score blue areas.
-- Yellow development: place up to 3 yellow cubes into one area; score yellow
-  areas.
-- Focused development: place up to 4 cubes of any colors into one area; score
-  full areas.
-- Wide development: place up to 3 cubes of any colors across multiple areas;
-  score colored areas adjacent to your cities.
-- Redevelopment: move one board cube to an adjacent area, then optionally place
-  up to 2 cubes; score neutral areas.
+- Red development: gain 2 red cubes; score your cities adjacent to at least one
+  red area times current city level.
+- Blue development: gain 2 blue cubes; score your cities adjacent to at least
+  one blue area times current city level.
+- Yellow development: gain 2 yellow cubes; score your cities adjacent to at
+  least one yellow area times current city level.
+
+A city counts once for a color-card score even when it touches multiple areas of
+that color.
+
+## Turn-End Placement
+
+After the required card use and any city builds, the player ends the turn by
+choosing one of:
+
+- place one hand cube of any color into one area
+- skip placement
+
+Turn-end placement is optional, but the turn does not advance until one of those
+choices resolves. Placement cannot exceed the current area capacity after the
+placement is applied. The placed cube becomes shared, and area color, board cube
+total, world level, area capacity, and city level are recalculated from the new
+board state.
 
 ## Cities
 
@@ -168,8 +183,8 @@ the highest final contribution win; tied winners are shared.
 - During action phase, choose a hand card and one of its three uses.
 - Use the city build panel before or after card use while the current player can
   pay the city cost.
-- Click the turn-end button after the card use and any city builds for that
-  turn.
+- After card use, choose a color and area to place one cube, or click the skip
+  placement button to end the turn.
 - Undo restores the full state before the most recent successful action.
 - Reset restarts the current player set from the initial state.
 - Recent action history, city production, final results, and server-side errors

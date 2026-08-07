@@ -29,34 +29,8 @@ const normalizeNames = (body: unknown): string[] | null => {
   return names.length >= 2 && names.length <= 4 ? names : null;
 };
 
-const isCubeMap = (value: unknown): value is Record<string, number> => {
-  if (!isRecord(value)) return false;
-  return Object.entries(value).every(
-    ([key, amount]) => cubeColors.includes(key as any) && Number.isInteger(amount)
-  );
-};
-
 const isCubeColor = (value: unknown): value is CubeColor =>
   typeof value === "string" && cubeColors.includes(value as CubeColor);
-
-const parsePlacement = (value: unknown) => {
-  if (!isRecord(value) || typeof value.areaId !== "string" || !isCubeMap(value.cubes)) {
-    return null;
-  }
-  return { areaId: value.areaId, cubes: value.cubes };
-};
-
-const parseMove = (value: unknown) => {
-  if (
-    !isRecord(value) ||
-    typeof value.fromAreaId !== "string" ||
-    typeof value.toAreaId !== "string" ||
-    !isCubeColor(value.color)
-  ) {
-    return null;
-  }
-  return { fromAreaId: value.fromAreaId, toAreaId: value.toAreaId, color: value.color };
-};
 
 const parseAction = (value: unknown): GameAction | null => {
   if (!isRecord(value) || typeof value.type !== "string" || typeof value.playerId !== "string") {
@@ -84,18 +58,6 @@ const parseAction = (value: unknown): GameAction | null => {
       mode: value.mode as CardUseMode,
     };
     if (isCubeColor(value.basicColor)) action.basicColor = value.basicColor;
-    if (typeof value.areaId === "string") action.areaId = value.areaId;
-    if (isCubeMap(value.cubes)) action.cubes = value.cubes;
-    if (Array.isArray(value.placements)) {
-      const placements = value.placements.map(parsePlacement);
-      if (placements.some((placement) => !placement)) return null;
-      action.placements = placements as NonNullable<typeof placements[number]>[];
-    }
-    if (value.move !== undefined) {
-      const move = parseMove(value.move);
-      if (!move) return null;
-      action.move = move;
-    }
     return action;
   }
 
@@ -108,10 +70,24 @@ const parseAction = (value: unknown): GameAction | null => {
   }
 
   if (value.type === "END_TURN") {
-    return {
+    const action: Extract<GameAction, { type: "END_TURN" }> = {
       type: value.type,
       playerId: value.playerId,
     };
+    if (value.placement !== undefined) {
+      if (
+        !isRecord(value.placement) ||
+        typeof value.placement.areaId !== "string" ||
+        !isCubeColor(value.placement.color)
+      ) {
+        return null;
+      }
+      action.placement = {
+        areaId: value.placement.areaId,
+        color: value.placement.color,
+      };
+    }
+    return action;
   }
 
   return null;

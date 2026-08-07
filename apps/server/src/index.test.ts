@@ -94,10 +94,39 @@ describe("server API", () => {
       action: {
         type: "END_TURN",
         playerId: "player-1",
+        placement: { areaId: "area-center", color: "red" },
       },
     });
     expect(ended.statusCode).toBe(200);
     expect(ended.json().state.currentPlayerId).toBe("player-2");
+    expect(ended.json().state.areas.find((area: any) => area.id === "area-center").cubes.red).toBe(1);
+  });
+
+  it("rejects removed multi-placement payloads on turn end", async () => {
+    await post("/api/game/start", { playerNames: ["A", "B"] });
+    const actionState = await draftAll();
+    const card = actionState.players[0].handCards[0];
+    await post("/api/game/actions", {
+      action: {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: card.instanceId,
+        mode: "basic",
+        basicColor: "red",
+      },
+    });
+    const invalid = await post("/api/game/actions", {
+      action: {
+        type: "END_TURN",
+        playerId: "player-1",
+        placement: [
+          { areaId: "area-center", color: "red" },
+          { areaId: "area-east", color: "blue" },
+        ],
+      },
+    });
+    expect(invalid.statusCode).toBe(400);
+    expect(invalid.json().state.currentPlayerId).toBe("player-1");
   });
 
   it("supports reset and undo", async () => {

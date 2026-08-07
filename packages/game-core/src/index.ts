@@ -5,8 +5,6 @@ import {
   type CardType,
   type CubeColor,
   type CubeCounts,
-  type CubeMove,
-  type CubePlacement,
   cubeColors,
   type GameAction,
   type GamePhase,
@@ -90,43 +88,22 @@ export const cardDefinitions: Record<CardType, CardDefinition> = {
     type: "red-development",
     name: "赤の発展",
     color: "red",
-    developmentText: "手元の赤キューブを最大3個、1つのエリアへ置く",
-    scoringText: "現在の赤エリア1つにつき1貢献度",
+    developmentText: "赤キューブを2個獲得する",
+    scoringText: "赤エリアに隣接する自分の都市数 × 都市Lv",
   },
   "blue-development": {
     type: "blue-development",
     name: "青の発展",
     color: "blue",
-    developmentText: "手元の青キューブを最大3個、1つのエリアへ置く",
-    scoringText: "現在の青エリア1つにつき1貢献度",
+    developmentText: "青キューブを2個獲得する",
+    scoringText: "青エリアに隣接する自分の都市数 × 都市Lv",
   },
   "yellow-development": {
     type: "yellow-development",
     name: "黄の発展",
     color: "yellow",
-    developmentText: "手元の黄キューブを最大3個、1つのエリアへ置く",
-    scoringText: "現在の黄エリア1つにつき1貢献度",
-  },
-  "focused-development": {
-    type: "focused-development",
-    name: "集中開発",
-    color: "multi",
-    developmentText: "手元から任意色を合計4個まで、1つのエリアへ置く",
-    scoringText: "容量上限まで発展したエリア1つにつき1貢献度",
-  },
-  "wide-development": {
-    type: "wide-development",
-    name: "広域開発",
-    color: "multi",
-    developmentText: "手元から任意色を合計3個まで、複数エリアへ分けて置く",
-    scoringText: "自分の都市が接している色付きエリア1つにつき1貢献度",
-  },
-  redevelopment: {
-    type: "redevelopment",
-    name: "再開発",
-    color: "multi",
-    developmentText: "盤面キューブ1個を隣接エリアへ移動し、任意色を最大2個配置できる",
-    scoringText: "現在の中立エリア1つにつき1貢献度",
+    developmentText: "黄キューブを2個獲得する",
+    scoringText: "黄エリアに隣接する自分の都市数 × 都市Lv",
   },
 };
 
@@ -134,27 +111,15 @@ const deckPattern: CardType[] = [
   "red-development",
   "blue-development",
   "yellow-development",
-  "focused-development",
-  "wide-development",
-  "redevelopment",
   "red-development",
   "blue-development",
   "yellow-development",
-  "focused-development",
-  "wide-development",
-  "redevelopment",
 ];
 
 const emptyCubes = (): CubeCounts => ({ red: 0, blue: 0, yellow: 0 });
 
 const cubeTotal = (cubes: PartialCubeCounts): number =>
   cubeColors.reduce((total, color) => total + (cubes[color] ?? 0), 0);
-
-const normalizeCubes = (cubes: PartialCubeCounts = {}): CubeCounts => ({
-  red: cubes.red ?? 0,
-  blue: cubes.blue ?? 0,
-  yellow: cubes.yellow ?? 0,
-});
 
 const cloneState = (state: GameState): GameState =>
   structuredClone(state) as GameState;
@@ -300,27 +265,8 @@ export const validateCubeTotals = (state: GameState): boolean => {
   return true;
 };
 
-const validateCubeInput = (cubes: PartialCubeCounts = {}): string | null => {
-  for (const color of cubeColors) {
-    const value = cubes[color] ?? 0;
-    if (!Number.isInteger(value) || value < 0) {
-      return "キューブ数は0以上の整数で指定してください。";
-    }
-  }
-  return null;
-};
-
 const getArea = (state: GameState, areaId: string): AreaState | null =>
   state.areas.find((candidate) => candidate.id === areaId) ?? null;
-
-const areAdjacentAreas = (state: GameState, firstAreaId: string, secondAreaId: string): boolean => {
-  const first = getArea(state, firstAreaId);
-  const second = getArea(state, secondAreaId);
-  if (!first || !second || first.id === second.id) return false;
-  const dq = first.q - second.q;
-  const dr = first.r - second.r;
-  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2 === 1;
-};
 
 const addHistory = (
   state: GameState,
@@ -456,134 +402,46 @@ const advanceAfterTurnEnd = (state: GameState): void => {
   }
 };
 
-const aggregatePlacements = (
-  placements: CubePlacement[]
-): { cubesByColor: CubeCounts; cubesByArea: Map<string, CubeCounts>; total: number; error: string | null } => {
-  const cubesByColor = emptyCubes();
-  const cubesByArea = new Map<string, CubeCounts>();
-  let total = 0;
-
-  for (const placement of placements) {
-    const inputError = validateCubeInput(placement.cubes);
-    if (inputError) return { cubesByColor, cubesByArea, total, error: inputError };
-    const cubes = normalizeCubes(placement.cubes);
-    const placementTotal = cubeTotal(cubes);
-    if (placementTotal <= 0) continue;
-    total += placementTotal;
-    const areaCubes = cubesByArea.get(placement.areaId) ?? emptyCubes();
-    for (const color of cubeColors) {
-      cubesByColor[color] += cubes[color];
-      areaCubes[color] += cubes[color];
-    }
-    cubesByArea.set(placement.areaId, areaCubes);
-  }
-
-  return { cubesByColor, cubesByArea, total, error: null };
-};
-
-const validatePlacementPlan = (
-  state: GameState,
-  player: PlayerState,
-  placements: CubePlacement[],
-  maxTotal: number,
-  requiredColor?: CubeColor,
-  singleArea = false,
-  checkCapacity = true
-): { cubesByColor: CubeCounts; cubesByArea: Map<string, CubeCounts>; total: number; error: string | null } => {
-  const plan = aggregatePlacements(placements);
-  if (plan.error) return plan;
-  if (plan.total < 1 || plan.total > maxTotal) {
-    return { ...plan, error: `配置は1〜${maxTotal}個で指定してください。` };
-  }
-  if (singleArea && plan.cubesByArea.size !== 1) {
-    return { ...plan, error: "このカードは1つのエリアだけに配置できます。" };
-  }
-  if (requiredColor && cubeColors.some((color) => color !== requiredColor && plan.cubesByColor[color] > 0)) {
-    return { ...plan, error: "このカードでは指定色以外を配置できません。" };
-  }
-  for (const color of cubeColors) {
-    if (player.cubes[color] < plan.cubesByColor[color]) {
-      return { ...plan, error: "手元にないキューブは配置できません。" };
-    }
-  }
-
-  if (checkCapacity) {
-    const capacity = getAreaCapacityForCubeTotal(getBoardCubeTotal(state) + plan.total);
-    for (const [areaId, cubes] of plan.cubesByArea) {
+const scoreForCard = (state: GameState, playerId: string, type: CardType): number => {
+  const targetColor = cardDefinitions[type].color as CubeColor;
+  const adjacentCityCount = state.intersections.filter((intersection) => {
+    if (intersection.city?.playerId !== playerId) return false;
+    return intersection.adjacentAreaIds.some((areaId) => {
       const area = getArea(state, areaId);
-      if (!area) return { ...plan, error: "存在しないエリアです。" };
-      if (areaTotal(area) + cubeTotal(cubes) > capacity) {
-        return { ...plan, error: "現在のエリア容量を超えています。" };
-      }
-    }
-  }
-
-  return plan;
+      return area ? getAreaColor(area.cubes) === targetColor : false;
+    });
+  }).length;
+  return adjacentCityCount * getCityLevel(state);
 };
 
-const applyPlacementPlan = (
+const validateEndTurnPlacement = (
   state: GameState,
   player: PlayerState,
-  plan: { cubesByColor: CubeCounts; cubesByArea: Map<string, CubeCounts> }
-): void => {
-  for (const color of cubeColors) {
-    player.cubes[color] -= plan.cubesByColor[color];
+  placement: Extract<GameAction, { type: "END_TURN" }>["placement"]
+): string | null => {
+  if (!placement) return null;
+  if (!cubeColors.includes(placement.color)) return "存在しない色です。";
+  if (player.cubes[placement.color] < 1) {
+    return "手元にないキューブは配置できません。";
   }
-  for (const [areaId, cubes] of plan.cubesByArea) {
-    const area = getArea(state, areaId);
-    if (!area) continue;
-    for (const color of cubeColors) {
-      area.cubes[color] += cubes[color];
-    }
-  }
-};
-
-const validateMove = (state: GameState, move: CubeMove | undefined): string | null => {
-  if (!move) return "移動するキューブを指定してください。";
-  if (!cubeColors.includes(move.color)) return "存在しない色です。";
-  const from = getArea(state, move.fromAreaId);
-  const to = getArea(state, move.toAreaId);
-  if (!from || !to) return "存在しないエリアです。";
-  if (!areAdjacentAreas(state, from.id, to.id)) {
-    return "隣接していないエリアへは移動できません。";
-  }
-  if (from.cubes[move.color] < 1) {
-    return "移動元に指定色のキューブがありません。";
-  }
-  if (areaTotal(to) + 1 > getAreaCapacity(state)) {
-    return "移動先のエリア容量を超えています。";
+  const area = getArea(state, placement.areaId);
+  if (!area) return "存在しないエリアです。";
+  const capacity = getAreaCapacityForCubeTotal(getBoardCubeTotal(state) + 1);
+  if (areaTotal(area) + 1 > capacity) {
+    return "現在のエリア容量を超えています。";
   }
   return null;
 };
 
-const scoreForCard = (state: GameState, playerId: string, type: CardType): number => {
-  if (type === "red-development") {
-    return state.areas.filter((area) => getAreaColor(area.cubes) === "red").length;
-  }
-  if (type === "blue-development") {
-    return state.areas.filter((area) => getAreaColor(area.cubes) === "blue").length;
-  }
-  if (type === "yellow-development") {
-    return state.areas.filter((area) => getAreaColor(area.cubes) === "yellow").length;
-  }
-  if (type === "focused-development") {
-    const capacity = getAreaCapacity(state);
-    return state.areas.filter((area) => areaTotal(area) >= capacity).length;
-  }
-  if (type === "wide-development") {
-    return state.intersections
-      .filter((intersection) => intersection.city?.playerId === playerId)
-      .reduce(
-        (total, intersection) =>
-          total +
-          intersection.adjacentAreaIds.filter((areaId) => {
-            const area = getArea(state, areaId);
-            return area ? getAreaColor(area.cubes) !== "neutral" : false;
-          }).length,
-        0
-      );
-  }
-  return state.areas.filter((area) => getAreaColor(area.cubes) === "neutral").length;
+const applyEndTurnPlacement = (
+  state: GameState,
+  player: PlayerState,
+  placement: NonNullable<Extract<GameAction, { type: "END_TURN" }>["placement"]>
+): void => {
+  const area = getArea(state, placement.areaId);
+  if (!area) return;
+  player.cubes[placement.color] -= 1;
+  area.cubes[placement.color] += 1;
 };
 
 const removeCard = (player: PlayerState, cardInstanceId: string): CardInstance => {
@@ -714,81 +572,14 @@ const applyUseCard = (
     return reject(state, "カード用途が不正です。");
   }
 
-  if (
-    card.type === "red-development" ||
-    card.type === "blue-development" ||
-    card.type === "yellow-development"
-  ) {
-    const requiredColor = cardDefinitions[card.type].color as CubeColor;
-    const placements = [{ areaId: action.areaId ?? "", cubes: action.cubes ?? {} }];
-    const plan = validatePlacementPlan(state, player, placements, 3, requiredColor, true);
-    if (plan.error) return reject(state, plan.error);
-    const next = cloneState(state);
-    const nextPlayer = currentPlayer(next);
-    const usedCard = removeCard(nextPlayer, action.cardInstanceId);
-    applyPlacementPlan(next, nextPlayer, plan);
-    addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で配置 (${formatCubes(plan.cubesByColor)})`);
-    next.turnCardUsed = true;
-    return { ok: true, state: next };
-  }
-
-  if (card.type === "focused-development") {
-    const placements = [{ areaId: action.areaId ?? "", cubes: action.cubes ?? {} }];
-    const plan = validatePlacementPlan(state, player, placements, 4, undefined, true);
-    if (plan.error) return reject(state, plan.error);
-    const next = cloneState(state);
-    const nextPlayer = currentPlayer(next);
-    const usedCard = removeCard(nextPlayer, action.cardInstanceId);
-    applyPlacementPlan(next, nextPlayer, plan);
-    addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で配置 (${formatCubes(plan.cubesByColor)})`);
-    next.turnCardUsed = true;
-    return { ok: true, state: next };
-  }
-
-  if (card.type === "wide-development") {
-    const plan = validatePlacementPlan(state, player, action.placements ?? [], 3);
-    if (plan.error) return reject(state, plan.error);
-    const next = cloneState(state);
-    const nextPlayer = currentPlayer(next);
-    const usedCard = removeCard(nextPlayer, action.cardInstanceId);
-    applyPlacementPlan(next, nextPlayer, plan);
-    addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で広域配置 (${formatCubes(plan.cubesByColor)})`);
-    next.turnCardUsed = true;
-    return { ok: true, state: next };
-  }
-
-  const moveError = validateMove(state, action.move);
-  if (moveError) return reject(state, moveError);
-  const placements = action.placements ?? [];
-  const plan = placements.length > 0
-    ? validatePlacementPlan(state, player, placements, 2, undefined, false, false)
-    : { cubesByColor: emptyCubes(), cubesByArea: new Map<string, CubeCounts>(), total: 0, error: null };
-  if (plan.error) return reject(state, plan.error);
-
-  const afterMove = cloneState(state);
-  const movedFrom = getArea(afterMove, action.move!.fromAreaId)!;
-  const movedTo = getArea(afterMove, action.move!.toAreaId)!;
-  movedFrom.cubes[action.move!.color] -= 1;
-  movedTo.cubes[action.move!.color] += 1;
-  for (const [areaId, cubes] of plan.cubesByArea) {
-    const area = getArea(afterMove, areaId);
-    const capacityAfterPlacement = getAreaCapacityForCubeTotal(getBoardCubeTotal(afterMove) + plan.total);
-    if (!area || areaTotal(area) + cubeTotal(cubes) > capacityAfterPlacement) {
-      return reject(state, "移動・配置後のエリア容量を超えています。");
-    }
-  }
-
-  const nextPlayer = currentPlayer(afterMove);
+  const producedColor = cardDefinitions[card.type].color as CubeColor;
+  const next = cloneState(state);
+  const nextPlayer = currentPlayer(next);
   const usedCard = removeCard(nextPlayer, action.cardInstanceId);
-  applyPlacementPlan(afterMove, nextPlayer, plan);
-  addHistory(
-    afterMove,
-    action.type,
-    action.playerId,
-    `${cardDefinitions[usedCard.type].name}で${action.move!.color}を移動し配置 (${formatCubes(plan.cubesByColor) || "なし"})`
-  );
-  afterMove.turnCardUsed = true;
-  return { ok: true, state: afterMove };
+  nextPlayer.cubes[producedColor] += 2;
+  addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で生産 (${producedColor}:2)`);
+  next.turnCardUsed = true;
+  return { ok: true, state: next };
 };
 
 const applyEndTurn = (
@@ -801,9 +592,23 @@ const applyEndTurn = (
   if (!state.turnCardUsed) {
     return reject(state, "手番終了前にカードを1枚使用してください。");
   }
+  const player = currentPlayer(state);
+  const placementError = validateEndTurnPlacement(state, player, action.placement);
+  if (placementError) return reject(state, placementError);
 
   const next = cloneState(state);
-  addHistory(next, action.type, action.playerId, "手番終了");
+  const nextPlayer = currentPlayer(next);
+  if (action.placement) {
+    applyEndTurnPlacement(next, nextPlayer, action.placement);
+    addHistory(
+      next,
+      action.type,
+      action.playerId,
+      `ターン終了時配置 (${action.placement.areaId}, ${action.placement.color}:1)`
+    );
+  } else {
+    addHistory(next, action.type, action.playerId, "配置せずに手番終了");
+  }
   advanceAfterTurnEnd(next);
   return { ok: true, state: next };
 };
