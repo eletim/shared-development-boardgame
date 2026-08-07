@@ -385,7 +385,11 @@ export const App = () => {
               <button
                 className="primary wide"
                 onClick={confirmBuild}
-                disabled={!state.legal.canBuildCity || !buildIntersectionId}
+                disabled={
+                  !state.legal.canBuildCity ||
+                  !buildIntersectionId ||
+                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
+                }
               >
                 都市を建設
               </button>
