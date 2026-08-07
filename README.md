@@ -63,6 +63,7 @@ pnpm lint
   cities.
 - Shared intersections are deduplicated; a shared vertex is one build location
   with one stable intersection ID and 1-3 adjacent area IDs.
+- A shared intersection can hold a city stack of up to three city pieces.
 - Cubes have three colors: red, blue, and yellow.
 - Cubes have no owner on the board. They are owned only while in a player's hand.
 - The common cube supply is treated as effectively unlimited for playtesting.
@@ -90,17 +91,35 @@ Area color uses the tied-majority-loses rule:
 
 Area color is recalculated immediately whenever board cubes change.
 
+## Area Level
+
+Area level is derived from the total number of cubes in that area and is
+independent from area color.
+
+| Area cubes | Area level |
+| ---: | ---: |
+| 0 | 0 |
+| 1-2 | 1 |
+| 3-4 | 2 |
+| 5-6 | 3 |
+
+Neutral areas still have area level and still count toward world level. They do
+not produce cubes from cities and are not scored by red, blue, or yellow
+development cards.
+
 ## World Level
 
 World level is derived from the total number of shared cubes on the board.
 
-| World level | Board cubes | Area capacity | City level |
+| World level | Board cubes | Area capacity | Maximum buildable city level |
 | --- | ---: | ---: | ---: |
-| 1 | 0-13 | 3 | 1 |
-| 2 | 14-27 | 5 | 2 |
-| 3 | 28+ | 7 | 3 |
+| 1 | 0-13 | 2 | 1 |
+| 2 | 14-27 | 4 | 2 |
+| 3 | 28+ | 6 | 3 |
 
 Area capacity is the total number of cubes in an area, not a per-color limit.
+Raising world level does not upgrade existing cities. It only unlocks higher
+city stack levels and larger area capacity.
 
 ## Round Structure
 
@@ -113,13 +132,15 @@ The game lasts three rounds.
    end the game
 
 At the start of each round, before draft, every city produces cubes
-simultaneously:
+simultaneously. Each city piece in a stack is handled independently:
 
 ```text
-production = current city level * adjacent area count of that color
+production per colored connection = city level * area level
 ```
 
-Neutral adjacent areas produce nothing. Multiple cities are summed.
+Neutral adjacent areas produce nothing even when they have area level. Multiple
+matching adjacent areas, multiple cities, and multiple city pieces in the same
+stack are all summed.
 
 ## Draft
 
@@ -138,15 +159,15 @@ one of three ways:
 
 Initial card types:
 
-- Red development: gain 2 red cubes; score your cities adjacent to at least one
-  red area times current city level.
-- Blue development: gain 2 blue cubes; score your cities adjacent to at least
-  one blue area times current city level.
-- Yellow development: gain 2 yellow cubes; score your cities adjacent to at
-  least one yellow area times current city level.
+- Red development: gain 2 red cubes; score every connection between your city
+  pieces and red areas as `city level * area level`.
+- Blue development: gain 2 blue cubes; score every connection between your city
+  pieces and blue areas as `city level * area level`.
+- Yellow development: gain 2 yellow cubes; score every connection between your
+  city pieces and yellow areas as `city level * area level`.
 
-A city counts once for a color-card score even when it touches multiple areas of
-that color.
+A city touching multiple areas of the target color scores each connection.
+Neutral areas are not scored by these cards.
 
 ## Turn-End Placement
 
@@ -157,18 +178,29 @@ choosing one of:
 - skip placement
 
 Turn-end placement is optional, but the turn does not advance until one of those
-choices resolves. Placement cannot exceed the current area capacity after the
-placement is applied. The placed cube becomes shared, and area color, board cube
-total, world level, area capacity, and city level are recalculated from the new
-board state.
+choices resolves. Placement cannot exceed the area capacity after the placement
+is applied. The placed cube becomes shared, and area color, area level, board
+cube total, world level, and area capacity are recalculated from the new board
+state.
 
 ## Cities
 
-Build a city on any empty intersection by paying one red, one blue, and one
-yellow cube from the current player's hand. Paid cubes return to the unlimited
-common supply and do not affect board cube totals.
+Build a city on any intersection by paying matching red, blue, and yellow cubes
+from the current player's hand. The city level is the next stack level at that
+intersection:
 
-Each owned city is worth 1 contribution at game end.
+- Lv1 city: red 1, blue 1, yellow 1
+- Lv2 city: red 2, blue 2, yellow 2
+- Lv3 city: red 3, blue 3, yellow 3
+
+You may build on your own city or another player's city. You may only build the
+next stack level, cannot skip levels, and cannot build above the current world
+level's maximum city level. Lower city pieces keep their owner and level when a
+new city is stacked above them. Paid cubes return to the unlimited common supply
+and do not affect board cube totals.
+
+Each owned city piece is worth 1 contribution at game end. City level itself is
+not extra final contribution.
 
 ## End Game
 
@@ -182,7 +214,7 @@ the highest final contribution win; tied winners are shared.
 - During draft, click a card from the current pack.
 - During action phase, choose a hand card and one of its three uses.
 - Use the city build panel before or after card use while the current player can
-  pay the city cost.
+  pay the next stack level's city cost.
 - After card use, choose a color and area to place one cube, or click the skip
   placement button to end the turn.
 - Undo restores the full state before the most recent successful action.

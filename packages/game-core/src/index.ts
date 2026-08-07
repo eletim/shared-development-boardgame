@@ -21,7 +21,6 @@ const cardsPerPlayerPerRound = 8;
 const maxRounds = 3;
 const hexSize = 86;
 const playerColors = ["#d73a31", "#1f6feb", "#2da44e", "#b7791f"];
-const cityCost: CubeCounts = { red: 1, blue: 1, yellow: 1 };
 
 export type CardDefinition = Omit<CardSummary, "instanceId">;
 
@@ -45,7 +44,7 @@ export type IntersectionState = {
   x: number;
   y: number;
   adjacentAreaIds: string[];
-  city: { playerId: string } | null;
+  cityStack: { playerId: string }[];
 };
 
 export type PlayerState = {
@@ -89,21 +88,21 @@ export const cardDefinitions: Record<CardType, CardDefinition> = {
     name: "赤の発展",
     color: "red",
     developmentText: "赤キューブを2個獲得する",
-    scoringText: "赤エリアに隣接する自分の都市数 × 都市Lv",
+    scoringText: "赤エリアとの各接続の 都市Lv × エリアLv",
   },
   "blue-development": {
     type: "blue-development",
     name: "青の発展",
     color: "blue",
     developmentText: "青キューブを2個獲得する",
-    scoringText: "青エリアに隣接する自分の都市数 × 都市Lv",
+    scoringText: "青エリアとの各接続の 都市Lv × エリアLv",
   },
   "yellow-development": {
     type: "yellow-development",
     name: "黄の発展",
     color: "yellow",
     developmentText: "黄キューブを2個獲得する",
-    scoringText: "黄エリアに隣接する自分の都市数 × 都市Lv",
+    scoringText: "黄エリアとの各接続の 都市Lv × エリアLv",
   },
 };
 
@@ -130,7 +129,11 @@ const currentPlayer = (state: GameState): PlayerState =>
   state.players[state.currentPlayerIndex];
 
 const cityCountForPlayer = (state: GameState, playerId: string): number =>
-  state.intersections.filter((intersection) => intersection.city?.playerId === playerId).length;
+  state.intersections.reduce(
+    (total, intersection) =>
+      total + intersection.cityStack.filter((city) => city.playerId === playerId).length,
+    0
+  );
 
 const summarizeCard = (card: CardInstance): CardSummary => ({
   instanceId: card.instanceId,
@@ -165,9 +168,9 @@ export const getCityLevel = (state: GameState): 1 | 2 | 3 => getWorldLevel(state
 export const getPhase = (state: GameState): 1 | 2 | 3 => getWorldLevel(state);
 
 const getAreaCapacityForWorldLevel = (worldLevel: 1 | 2 | 3): number => {
-  if (worldLevel === 1) return 3;
-  if (worldLevel === 2) return 5;
-  return 7;
+  if (worldLevel === 1) return 2;
+  if (worldLevel === 2) return 4;
+  return 6;
 };
 
 const getAreaCapacityForCubeTotal = (boardCubeTotal: number): number =>
@@ -175,6 +178,26 @@ const getAreaCapacityForCubeTotal = (boardCubeTotal: number): number =>
 
 export const getAreaCapacity = (state: GameState): number =>
   getAreaCapacityForWorldLevel(getWorldLevel(state));
+
+export const getAreaLevel = (cubes: CubeCounts): 0 | 1 | 2 | 3 => {
+  const total = cubeTotal(cubes);
+  if (total === 0) return 0;
+  if (total <= 2) return 1;
+  if (total <= 4) return 2;
+  return 3;
+};
+
+const getCityLevelForStackIndex = (stackIndex: number): 1 | 2 | 3 => {
+  if (stackIndex === 0) return 1;
+  if (stackIndex === 1) return 2;
+  return 3;
+};
+
+const getCityCost = (level: 1 | 2 | 3): CubeCounts => ({
+  red: level,
+  blue: level,
+  yellow: level,
+});
 
 export const createBoardDefinition = (): BoardDefinition => {
   const axialAreas = [
@@ -220,7 +243,7 @@ export const createBoardDefinition = (): BoardDefinition => {
       x: Math.round(corner.x * 100) / 100,
       y: Math.round(corner.y * 100) / 100,
       adjacentAreaIds: [...corner.adjacentAreaIds].sort(),
-      city: null,
+      cityStack: [],
     }));
 
   return { areas, intersections };
@@ -326,8 +349,12 @@ const createRoundPacks = (state: GameState): CardInstance[][] => {
 };
 
 const produceForRound = (state: GameState): ProductionEntry[] => {
-  const cityLevel = getCityLevel(state);
-  const areaColors = new Map(state.areas.map((area) => [area.id, getAreaColor(area.cubes)]));
+  const areaValues = new Map(
+    state.areas.map((area) => [
+      area.id,
+      { color: getAreaColor(area.cubes), level: getAreaLevel(area.cubes) },
+    ])
+  );
   const entries = state.players.map((player): ProductionEntry => ({
     playerId: player.id,
     playerName: player.name,
@@ -335,14 +362,16 @@ const produceForRound = (state: GameState): ProductionEntry[] => {
   }));
 
   for (const intersection of state.intersections) {
-    if (!intersection.city) continue;
-    const entry = entries.find((candidate) => candidate.playerId === intersection.city?.playerId);
-    if (!entry) continue;
-    for (const areaId of intersection.adjacentAreaIds) {
-      const color = areaColors.get(areaId);
-      if (!color || color === "neutral") continue;
-      entry.cubes[color] += cityLevel;
-    }
+    intersection.cityStack.forEach((city, stackIndex) => {
+      const entry = entries.find((candidate) => candidate.playerId === city.playerId);
+      if (!entry) return;
+      const cityLevel = getCityLevelForStackIndex(stackIndex);
+      for (const areaId of intersection.adjacentAreaIds) {
+        const area = areaValues.get(areaId);
+        if (!area || area.color === "neutral") continue;
+        entry.cubes[area.color] += cityLevel * area.level;
+      }
+    });
   }
 
   for (const entry of entries) {
@@ -404,14 +433,19 @@ const advanceAfterTurnEnd = (state: GameState): void => {
 
 const scoreForCard = (state: GameState, playerId: string, type: CardType): number => {
   const targetColor = cardDefinitions[type].color as CubeColor;
-  const adjacentCityCount = state.intersections.filter((intersection) => {
-    if (intersection.city?.playerId !== playerId) return false;
-    return intersection.adjacentAreaIds.some((areaId) => {
+  return state.intersections.reduce((total, intersection) => {
+    const cityValue = intersection.cityStack.reduce((cityTotal, city, stackIndex) => {
+      if (city.playerId !== playerId) return cityTotal;
+      const cityLevel = getCityLevelForStackIndex(stackIndex);
+      const connectionValue = intersection.adjacentAreaIds.reduce((areaTotalValue, areaId) => {
       const area = getArea(state, areaId);
-      return area ? getAreaColor(area.cubes) === targetColor : false;
-    });
-  }).length;
-  return adjacentCityCount * getCityLevel(state);
+        if (!area || getAreaColor(area.cubes) !== targetColor) return areaTotalValue;
+        return areaTotalValue + cityLevel * getAreaLevel(area.cubes);
+      }, 0);
+      return cityTotal + connectionValue;
+    }, 0);
+    return total + cityValue;
+  }, 0);
 };
 
 const validateEndTurnPlacement = (
@@ -501,12 +535,18 @@ const applyBuildCity = (
     (candidate) => candidate.id === action.intersectionId
   );
   if (!intersection) return reject(state, "存在しない交点です。");
-  if (intersection.city) return reject(state, "この交点にはすでに都市があります。");
+  if (intersection.cityStack.length >= 3) return reject(state, "都市スタックはLv3までです。");
+
+  const buildLevel = getCityLevelForStackIndex(intersection.cityStack.length);
+  if (buildLevel > getCityLevel(state)) {
+    return reject(state, "現在の世界Lvを超える都市Lvは建設できません。");
+  }
 
   const player = currentPlayer(state);
+  const cost = getCityCost(buildLevel);
   for (const color of cubeColors) {
-    if (player.cubes[color] < cityCost[color]) {
-      return reject(state, "都市建設には手元の赤・青・黄が1個ずつ必要です。");
+    if (player.cubes[color] < cost[color]) {
+      return reject(state, `Lv${buildLevel}都市建設には手元の赤・青・黄が${buildLevel}個ずつ必要です。`);
     }
   }
 
@@ -517,10 +557,10 @@ const applyBuildCity = (
   );
   if (!nextIntersection) return reject(state, "存在しない交点です。");
   for (const color of cubeColors) {
-    nextPlayer.cubes[color] -= cityCost[color];
+    nextPlayer.cubes[color] -= cost[color];
   }
-  nextIntersection.city = { playerId: action.playerId };
-  addHistory(next, action.type, action.playerId, `${nextIntersection.id}に都市を建設`);
+  nextIntersection.cityStack.push({ playerId: action.playerId });
+  addHistory(next, action.type, action.playerId, `${nextIntersection.id}にLv${buildLevel}都市を建設`);
   return { ok: true, state: next };
 };
 
@@ -638,26 +678,43 @@ export const getLegalInfo = (state: GameState, canUndo = false): LegalInfo => {
       canEndTurn: false,
       draftPack: [],
       buildableIntersectionIds: [],
+      placeableAreaIds: [],
+      turnEndAreaCapacity: 0,
     };
   }
 
   const player = currentPlayer(state);
-  const canPayCity = cubeColors.every((color) => player.cubes[color] >= cityCost[color]);
+  const turnEndAreaCapacity = getAreaCapacityForCubeTotal(getBoardCubeTotal(state) + 1);
+  const placeableAreaIds = state.phase === "action" && state.turnCardUsed
+    ? state.areas
+        .filter((area) => areaTotal(area) + 1 <= turnEndAreaCapacity)
+        .map((area) => area.id)
+    : [];
+  const maxCityLevel = getCityLevel(state);
+  const buildableIntersectionIds = state.phase === "action"
+    ? state.intersections
+        .filter((intersection) => {
+          if (intersection.cityStack.length >= 3) return false;
+          const buildLevel = getCityLevelForStackIndex(intersection.cityStack.length);
+          if (buildLevel > maxCityLevel) return false;
+          const cost = getCityCost(buildLevel);
+          return cubeColors.every((color) => player.cubes[color] >= cost[color]);
+        })
+        .map((intersection) => intersection.id)
+    : [];
 
   return {
     canUndo,
     canDraft: state.phase === "draft",
     canUseCard: state.phase === "action" && player.handCards.length > 0 && !state.turnCardUsed,
-    canBuildCity: state.phase === "action" && canPayCity,
+    canBuildCity: buildableIntersectionIds.length > 0,
     canEndTurn: state.phase === "action" && state.turnCardUsed,
     draftPack: state.phase === "draft"
       ? (state.draftPacks[state.currentPlayerIndex] ?? []).map(summarizeCard)
       : [],
-    buildableIntersectionIds: state.phase === "action" && canPayCity
-      ? state.intersections
-          .filter((intersection) => !intersection.city)
-          .map((intersection) => intersection.id)
-      : [],
+    buildableIntersectionIds,
+    placeableAreaIds,
+    turnEndAreaCapacity,
   };
 };
 
@@ -701,15 +758,24 @@ export const toPublicState = (state: GameState, canUndo = false): PublicGameStat
     areas: state.areas.map((area) => ({
       ...area,
       cubeTotal: areaTotal(area),
+      areaLevel: getAreaLevel(area.cubes),
       areaColor: getAreaColor(area.cubes),
     })),
     intersections: state.intersections.map((intersection) => {
-      const owner = intersection.city
-        ? state.players.find((player) => player.id === intersection.city?.playerId)
-        : null;
+      const cityStack = intersection.cityStack.flatMap((city, stackIndex) => {
+        const owner = state.players.find((player) => player.id === city.playerId);
+        if (!owner) return [];
+        return [{
+          playerId: owner.id,
+          playerColor: owner.color,
+          level: getCityLevelForStackIndex(stackIndex),
+        }];
+      });
+      const topCity = cityStack[cityStack.length - 1] ?? null;
       return {
         ...intersection,
-        city: owner ? { playerId: owner.id, playerColor: owner.color } : null,
+        city: topCity,
+        cityStack,
       };
     }),
     lastProduction: state.lastProduction,

@@ -3,6 +3,7 @@ import {
   applyAction,
   createBoardDefinition,
   createInitialState,
+  getAreaLevel,
   getAreaCapacity,
   getAreaColor,
   getBoardCubeTotal,
@@ -62,7 +63,7 @@ const addBoardCubes = (
 
 const emptyIntersectionIds = (state: GameState, count: number): string[] =>
   state.intersections
-    .filter((intersection) => !intersection.city)
+    .filter((intersection) => intersection.cityStack.length === 0)
     .slice(0, count)
     .map((intersection) => intersection.id);
 
@@ -99,13 +100,40 @@ describe("area color and world level", () => {
 
     const state = createInitialState(["A", "B"]);
     expect(getWorldLevel(state)).toBe(1);
-    expect(getAreaCapacity(state)).toBe(3);
+    expect(getAreaCapacity(state)).toBe(2);
     expect(getCityLevel(state)).toBe(1);
     addBoardCubes(state, "area-center", { red: 14 });
     expect(getBoardCubeTotal(state)).toBe(14);
     expect(getWorldLevel(state)).toBe(2);
-    expect(getAreaCapacity(state)).toBe(5);
+    expect(getAreaCapacity(state)).toBe(4);
     expect(getCityLevel(state)).toBe(2);
+    addBoardCubes(state, "area-east", { blue: 14 });
+    expect(getBoardCubeTotal(state)).toBe(28);
+    expect(getWorldLevel(state)).toBe(3);
+    expect(getAreaCapacity(state)).toBe(6);
+    expect(getCityLevel(state)).toBe(3);
+  });
+
+  it.each([
+    [{ red: 0, blue: 0, yellow: 0 }, 0],
+    [{ red: 1, blue: 0, yellow: 0 }, 1],
+    [{ red: 1, blue: 1, yellow: 0 }, 1],
+    [{ red: 2, blue: 1, yellow: 0 }, 2],
+    [{ red: 2, blue: 2, yellow: 0 }, 2],
+    [{ red: 2, blue: 2, yellow: 1 }, 3],
+    [{ red: 2, blue: 2, yellow: 2 }, 3],
+  ] as const)("derives area level from total cubes for %o", (cubes, level) => {
+    expect(getAreaLevel(cubes)).toBe(level);
+  });
+
+  it("keeps neutral areas developed and counts them toward world level", () => {
+    const state = createInitialState(["A", "B"]);
+    addBoardCubes(state, "area-center", { red: 2, blue: 2 });
+    expect(getAreaColor(state.areas.find((area) => area.id === "area-center")!.cubes)).toBe("neutral");
+    expect(getAreaLevel(state.areas.find((area) => area.id === "area-center")!.cubes)).toBe(2);
+    addBoardCubes(state, "area-east", { yellow: 10 });
+    expect(getBoardCubeTotal(state)).toBe(14);
+    expect(getWorldLevel(state)).toBe(2);
   });
 });
 
@@ -169,13 +197,14 @@ describe("draft and card turns", () => {
 
   it("places one cube at turn end and updates area color and world level", () => {
     let state = draftAll(createInitialState(["A", "B"]));
-    addBoardCubes(state, "area-center", { red: 3 });
-    addBoardCubes(state, "area-east", { blue: 3 });
-    addBoardCubes(state, "area-northeast", { yellow: 3 });
-    addBoardCubes(state, "area-northwest", { red: 3 });
+    addBoardCubes(state, "area-center", { red: 2 });
+    addBoardCubes(state, "area-east", { blue: 2 });
+    addBoardCubes(state, "area-northeast", { yellow: 2 });
+    addBoardCubes(state, "area-northwest", { red: 2 });
+    addBoardCubes(state, "area-southeast", { yellow: 4 });
     addBoardCubes(state, "area-west", { blue: 1 });
     expect(getBoardCubeTotal(state)).toBe(13);
-    expect(getAreaCapacity(state)).toBe(3);
+    expect(getAreaCapacity(state)).toBe(2);
 
     state.players[0].cubes.red = 1;
     const card = state.players[0].handCards[0];
@@ -188,8 +217,8 @@ describe("draft and card turns", () => {
     });
     state = endTurn(state, { areaId: "area-center", color: "red" });
     expect(getBoardCubeTotal(state)).toBe(14);
-    expect(getAreaCapacity(state)).toBe(5);
-    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(4);
+    expect(getAreaCapacity(state)).toBe(4);
+    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(3);
     expect(getAreaColor(state.areas.find((area) => area.id === "area-center")!.cubes)).toBe("red");
     expect(state.currentPlayerIndex).toBe(1);
   });
@@ -197,7 +226,7 @@ describe("draft and card turns", () => {
   it("rejects invalid turn-end placements without advancing the turn or mutating state", () => {
     const state = draftAll(createInitialState(["A", "B"]));
     state.players[0].cubes.red = 1;
-    addBoardCubes(state, "area-center", { red: 3 });
+    addBoardCubes(state, "area-center", { red: 2 });
     const card = state.players[0].handCards[0];
     const used = play(state, {
       type: "USE_CARD",
@@ -215,7 +244,7 @@ describe("draft and card turns", () => {
     expect(result.ok).toBe(false);
     expect(JSON.stringify(used)).toBe(before);
     expect(used.currentPlayerIndex).toBe(0);
-    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(3);
+    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(2);
   });
 
   it("skips turn-end placement and then advances to the next player", () => {
@@ -234,7 +263,7 @@ describe("draft and card turns", () => {
     expect(state.currentPlayerIndex).toBe(1);
   });
 
-  it("scores color cards by own cities adjacent to at least one matching area times city level", () => {
+  it("scores color cards by summing each own city connection value", () => {
     let state = draftAll(createInitialState(["A", "B"]));
     const sharedRedCity = state.intersections.find((candidate) => candidate.adjacentAreaIds.length === 3)!;
     const singleRedCity = state.intersections.find(
@@ -242,12 +271,12 @@ describe("draft and card turns", () => {
         candidate.id !== sharedRedCity.id &&
         candidate.adjacentAreaIds.includes(sharedRedCity.adjacentAreaIds[0])
     )!;
-    sharedRedCity.city = { playerId: "player-1" };
-    singleRedCity.city = { playerId: "player-1" };
-    addBoardCubes(state, sharedRedCity.adjacentAreaIds[0], { red: 5 });
-    addBoardCubes(state, sharedRedCity.adjacentAreaIds[1], { red: 5 });
+    sharedRedCity.cityStack = [{ playerId: "player-2" }, { playerId: "player-1" }];
+    singleRedCity.cityStack = [{ playerId: "player-1" }];
+    addBoardCubes(state, sharedRedCity.adjacentAreaIds[0], { red: 2 });
+    addBoardCubes(state, sharedRedCity.adjacentAreaIds[1], { red: 4 });
     addBoardCubes(state, "area-east", { blue: 4 });
-    expect(getCityLevel(state)).toBe(2);
+    expect(getCityLevel(state)).toBe(1);
 
     const redCard = cardOfType(state, 0, "red-development");
     state = play(state, {
@@ -256,20 +285,20 @@ describe("draft and card turns", () => {
       cardInstanceId: redCard.instanceId,
       mode: "scoring",
     });
-    expect(state.players[0].contribution).toBe(4);
+    expect(state.players[0].contribution).toBe(2 * 1 + 2 * 2 + 1 * 1 + 1 * 2);
     expect(state.players[0].handCards.some((candidate) => candidate.instanceId === redCard.instanceId)).toBe(false);
   });
 
-  it("scores blue and yellow cards with the same city-count rule", () => {
+  it("scores blue and yellow cards with the same connection-value rule", () => {
     let state = draftAll(createInitialState(["A", "B"]));
     const blueCity = state.intersections.find((candidate) => candidate.adjacentAreaIds.includes("area-center"))!;
     const yellowCity = state.intersections.find(
       (candidate) => candidate.id !== blueCity.id && candidate.adjacentAreaIds.includes("area-east")
     )!;
-    blueCity.city = { playerId: "player-1" };
-    yellowCity.city = { playerId: "player-1" };
+    blueCity.cityStack = [{ playerId: "player-1" }];
+    yellowCity.cityStack = [{ playerId: "player-1" }, { playerId: "player-1" }];
     addBoardCubes(state, "area-center", { blue: 3 });
-    addBoardCubes(state, "area-east", { yellow: 3 });
+    addBoardCubes(state, "area-east", { yellow: 5 });
 
     const blueCard = cardOfType(state, 0, "blue-development");
     state = play(state, {
@@ -278,7 +307,7 @@ describe("draft and card turns", () => {
       cardInstanceId: blueCard.instanceId,
       mode: "scoring",
     });
-    expect(state.players[0].contribution).toBe(1);
+    expect(state.players[0].contribution).toBe(2);
     state = endTurn(state);
     const otherCard = state.players[1].handCards[0];
     state = play(state, {
@@ -297,7 +326,7 @@ describe("draft and card turns", () => {
       cardInstanceId: yellowCard.instanceId,
       mode: "scoring",
     });
-    expect(state.players[0].contribution).toBe(2);
+    expect(state.players[0].contribution).toBe(11);
   });
 
   it("ends a round when every player's hand is empty and starts production before the next draft", () => {
@@ -305,7 +334,7 @@ describe("draft and card turns", () => {
     state.players[0].handCards = [{ instanceId: "p1-final", type: "red-development" }];
     state.players[1].handCards = [{ instanceId: "p2-final", type: "blue-development" }];
     state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
-    state.intersections[0].city = { playerId: "player-1" };
+    state.intersections[0].cityStack = [{ playerId: "player-1" }];
     addBoardCubes(state, state.intersections[0].adjacentAreaIds[0], { red: 2 });
 
     state = play(state, {
@@ -346,7 +375,7 @@ describe("city rules and production", () => {
     });
     expect(state.players[0].cubes).toEqual({ red: 0, blue: 0, yellow: 0 });
     expect(getBoardCubeTotal(state)).toBe(beforeBoardTotal);
-    expect(state.intersections.filter((intersection) => intersection.city?.playerId === "player-1")).toHaveLength(1);
+    expect(state.intersections.flatMap((intersection) => intersection.cityStack).filter((city) => city.playerId === "player-1")).toHaveLength(1);
   });
 
   it("allows multiple city builds in the same turn while resources last", () => {
@@ -357,7 +386,7 @@ describe("city rules and production", () => {
     expect(state.currentPlayerIndex).toBe(0);
     state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: second });
     expect(state.players[0].cubes).toEqual({ red: 0, blue: 0, yellow: 0 });
-    expect(state.intersections.filter((intersection) => intersection.city?.playerId === "player-1")).toHaveLength(2);
+    expect(state.intersections.flatMap((intersection) => intersection.cityStack).filter((city) => city.playerId === "player-1")).toHaveLength(2);
   });
 
   it("allows city builds after the card action before turn-end placement or skip", () => {
@@ -375,17 +404,79 @@ describe("city rules and production", () => {
     state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
     expect(state.currentPlayerIndex).toBe(0);
     expect(state.turnCardUsed).toBe(true);
-    expect(state.intersections.find((intersection) => intersection.id === cityId)?.city?.playerId).toBe("player-1");
+    expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack[0]?.playerId).toBe("player-1");
     state = endTurn(state);
     expect(state.currentPlayerIndex).toBe(1);
   });
 
-  it("produces cityLevel times adjacent colored areas and ignores neutral areas", () => {
+  it("stacks cities on own and other players' cities without changing lower levels or owners", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const cityId = emptyIntersectionIds(state, 1)[0];
+    state.players[0].cubes = { red: 3, blue: 3, yellow: 3 };
+
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(state.players[0].cubes).toEqual({ red: 2, blue: 2, yellow: 2 });
+
+    let rejected = applyAction(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(rejected.ok).toBe(false);
+    expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1" },
+    ]);
+
+    addBoardCubes(state, "area-center", { red: 14 });
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(state.players[0].cubes).toEqual({ red: 0, blue: 0, yellow: 0 });
+    expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1" },
+      { playerId: "player-1" },
+    ]);
+
+    const card = state.players[0].handCards[0];
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: card.instanceId,
+      mode: "basic",
+      basicColor: "red",
+    });
+    state = endTurn(state);
+    state.players[1].cubes = { red: 3, blue: 3, yellow: 3 };
+    rejected = applyAction(state, { type: "BUILD_CITY", playerId: "player-2", intersectionId: cityId });
+    expect(rejected.ok).toBe(false);
+    addBoardCubes(state, "area-east", { blue: 14 });
+    state = play(state, { type: "BUILD_CITY", playerId: "player-2", intersectionId: cityId });
+    expect(state.players[1].cubes).toEqual({ red: 0, blue: 0, yellow: 0 });
+    expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1" },
+      { playerId: "player-1" },
+      { playerId: "player-2" },
+    ]);
+  });
+
+  it("does not auto-upgrade existing city levels when world level rises", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const cityId = state.intersections.find((intersection) => intersection.adjacentAreaIds.includes("area-center"))!.id;
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    addBoardCubes(state, "area-center", { red: 28 });
+
+    const publicState = toPublicState(state);
+    expect(publicState.worldLevel).toBe(3);
+    expect(publicState.cityLevel).toBe(3);
+    expect(publicState.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1", playerColor: "#d73a31", level: 1 },
+    ]);
+  });
+
+  it("produces city level times area level per colored connection and ignores neutral areas", () => {
     let state = draftAll(createInitialState(["A", "B"]));
     const intersection = state.intersections.find((candidate) => candidate.adjacentAreaIds.length === 3)!;
-    state.intersections.find((candidate) => candidate.id === intersection.id)!.city = { playerId: "player-1" };
+    state.intersections.find((candidate) => candidate.id === intersection.id)!.cityStack = [
+      { playerId: "player-1" },
+      { playerId: "player-1" },
+    ];
     const [redArea, blueArea, neutralArea] = intersection.adjacentAreaIds;
-    addBoardCubes(state, redArea, { red: 5 });
+    addBoardCubes(state, redArea, { red: 4 });
     addBoardCubes(state, blueArea, { blue: 5 });
     addBoardCubes(state, neutralArea, { red: 1, blue: 1 });
     addBoardCubes(state, "area-east", { yellow: 3 });
@@ -411,7 +502,7 @@ describe("city rules and production", () => {
     state = endTurn(state);
 
     const production = state.lastProduction.find((entry) => entry.playerId === "player-1")!;
-    expect(production.cubes).toEqual({ red: 2, blue: 2, yellow: 0 });
+    expect(production.cubes).toEqual({ red: 6, blue: 9, yellow: 0 });
   });
 
   it("sums production from multiple cities", () => {
@@ -420,8 +511,8 @@ describe("city rules and production", () => {
     const second = state.intersections.find(
       (candidate) => candidate.id !== first.id && candidate.adjacentAreaIds.includes("area-center")
     )!;
-    first.city = { playerId: "player-1" };
-    second.city = { playerId: "player-1" };
+    first.cityStack = [{ playerId: "player-1" }];
+    second.cityStack = [{ playerId: "player-1" }];
     addBoardCubes(state, "area-center", { yellow: 3 });
     state.players[0].handCards = [{ instanceId: "p1-final", type: "red-development" }];
     state.players[1].handCards = [{ instanceId: "p2-final", type: "blue-development" }];
@@ -441,7 +532,7 @@ describe("city rules and production", () => {
       basicColor: "blue",
     });
     state = endTurn(state);
-    expect(state.lastProduction.find((entry) => entry.playerId === "player-1")?.cubes.yellow).toBe(2);
+    expect(state.lastProduction.find((entry) => entry.playerId === "player-1")?.cubes.yellow).toBe(4);
   });
 });
 
@@ -451,7 +542,7 @@ describe("game end, invalid actions, and undo consistency", () => {
     state.round = 3;
     state.players[0].contribution = 2;
     state.players[1].contribution = 1;
-    state.intersections[0].city = { playerId: "player-2" };
+    state.intersections[0].cityStack = [{ playerId: "player-2" }];
     state.players[0].handCards = [{ instanceId: "p1-final", type: "red-development" }];
     state.players[1].handCards = [{ instanceId: "p2-final", type: "blue-development" }];
     state = play(state, {
@@ -538,7 +629,7 @@ describe("game end, invalid actions, and undo consistency", () => {
     expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(1);
     expect(snapshot.players[0].handCards.length).toBe(8);
     expect(snapshot.players[0].cubes).toEqual({ red: 3, blue: 1, yellow: 1 });
-    expect(snapshot.intersections.every((intersection) => !intersection.city)).toBe(true);
+    expect(snapshot.intersections.every((intersection) => intersection.cityStack.length === 0)).toBe(true);
     expect(snapshot).toEqual(structuredClone(snapshot));
   });
 });
