@@ -93,6 +93,11 @@ export const App = () => {
   const turnEndProductionText = state?.turnEndProduction
     ? `追加生産見込み: ${colorLabels[state.turnEndProduction.color]} ${state.turnEndProduction.additionalCubes}`
     : "";
+  const worldLevelStatus = state
+    ? `世界Lv${state.worldLevel} / 次の解禁: ${
+        state.nextWorldLevelThreshold ? `${state.nextWorldLevelThreshold}点` : "なし"
+      } / 現在最高: ${state.highestContribution}点`
+    : "";
 
   const applyResponse = (data: GameResponse) => {
     if (data.state !== undefined) setState(data.state);
@@ -163,6 +168,15 @@ export const App = () => {
     void sendAction(action);
   };
 
+  const claimWorldLevelBonus = (color: CubeColor) => {
+    if (!state?.currentPlayerId) return;
+    void sendAction({
+      type: "CLAIM_WORLD_LEVEL_BONUS",
+      playerId: state.currentPlayerId,
+      color,
+    });
+  };
+
   if (!state) {
     return (
       <main className="setup-shell">
@@ -211,6 +225,7 @@ export const App = () => {
             Round {state.round} / {state.maxRounds} · {state.phase === "draft" ? "ドラフト" : state.phase === "action" ? "アクション" : "終了"} · 世界Lv {state.worldLevel} ·
             最大都市Lv {state.cityLevel} · 容量 {state.areaCapacity} · 盤面 {state.boardCubeTotal}
           </p>
+          <p>{worldLevelStatus}</p>
         </div>
         <div className="turn-block">
           <span>手番</span>
@@ -281,9 +296,39 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" ? (
+            state.pendingWorldLevelBonus ? (
+              <section className="actions world-bonus">
+                <h2>世界Lv{state.pendingWorldLevelBonus.level}を解禁しました</h2>
+                <p className="hint">
+                  {state.pendingWorldLevelBonus.playerName}はボーナスとして好きなキューブを1個選んでください。
+                </p>
+                <div className="bonus-buttons" aria-label="解禁ボーナス">
+                  {cubeColors.map((color) => (
+                    <button
+                      key={color}
+                      className={`cube-choice ${color}`}
+                      onClick={() => claimWorldLevelBonus(color)}
+                      disabled={!state.legal.canClaimWorldLevelBonus}
+                    >
+                      {colorLabels[color]}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">取得後も{state.currentPlayerName}のターンを継続します。</p>
+              </section>
+            ) : null
+          ) : null}
+
+          {state.phase === "action" ? (
             <section className="actions">
               <h2>カード手番</h2>
-              {state.turnCardUsed ? <p className="hint">カード使用済み。都市建設後に手番終了できます。</p> : null}
+              {state.turnCardUsed ? (
+                <p className="hint">
+                  {state.pendingWorldLevelBonus
+                    ? "カード使用済み。解禁ボーナス選択後に手番を続けられます。"
+                    : "カード使用済み。都市建設後に手番終了できます。"}
+                </p>
+              ) : null}
               <label>
                 手札
                 <select
@@ -337,7 +382,7 @@ export const App = () => {
             </section>
           ) : null}
 
-          {state.phase === "action" && state.turnCardUsed ? (
+          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus ? (
             <section className="actions">
               <h2>ターン終了時配置</h2>
               {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
@@ -382,7 +427,7 @@ export const App = () => {
             </section>
           ) : null}
 
-          {state.phase === "action" ? (
+          {state.phase === "action" && !state.pendingWorldLevelBonus ? (
             <section className="actions">
               <h2>都市建設</h2>
               <label>

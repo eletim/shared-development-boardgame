@@ -90,6 +90,14 @@ const parseAction = (value: unknown): GameAction | null => {
     return action;
   }
 
+  if (value.type === "CLAIM_WORLD_LEVEL_BONUS" && isCubeColor(value.color)) {
+    return {
+      type: value.type,
+      playerId: value.playerId,
+      color: value.color,
+    };
+  }
+
   return null;
 };
 

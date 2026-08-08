@@ -257,6 +257,27 @@ select {
   color: #ffffff;
 }
 
+.world-bonus {
+  border-color: #24563b;
+}
+
+.bonus-buttons {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.cube-choice {
+  border: 0;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.cube-choice.yellow {
+  color: #1f1f1f;
+}
+
 .action-form {
   display: grid;
   gap: 12px;
