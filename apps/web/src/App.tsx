@@ -52,7 +52,7 @@ export const App = () => {
   const [playerCount, setPlayerCount] = useState(2);
   const [names, setNames] = useState(["Player 1", "Player 2", "Player 3", "Player 4"]);
   const [selectedCardId, setSelectedCardId] = useState("");
-  const [useMode, setUseMode] = useState<CardUseMode>("development");
+  const [useMode, setUseMode] = useState<CardUseMode>("production");
   const [basicColor, setBasicColor] = useState<CubeColor>("red");
   const [endPlacementAreaId, setEndPlacementAreaId] = useState("");
   const [endPlacementColor, setEndPlacementColor] = useState<CubeColor>("red");
@@ -70,7 +70,7 @@ export const App = () => {
   useEffect(() => {
     const firstCard = currentPlayer?.handCards[0]?.instanceId ?? "";
     setSelectedCardId(firstCard);
-    setUseMode("development");
+    setUseMode("production");
     setBasicColor("red");
     setEndPlacementAreaId("");
     setEndPlacementColor("red");
@@ -90,6 +90,9 @@ export const App = () => {
     selectedBuildIntersection && selectedBuildIntersection.cityStack.length < 3
       ? selectedBuildIntersection.cityStack.length + 1
       : null;
+  const turnEndProductionText = state?.turnEndProduction
+    ? `追加生産見込み: ${colorLabels[state.turnEndProduction.color]} ${state.turnEndProduction.additionalCubes}`
+    : "";
 
   const applyResponse = (data: GameResponse) => {
     if (data.state !== undefined) setState(data.state);
@@ -269,7 +272,7 @@ export const App = () => {
                 {state.legal.draftPack.map((card) => (
                   <button key={card.instanceId} className="card-button" onClick={() => draftPick(card)}>
                     <strong>{card.name}</strong>
-                    <span>{card.developmentText}</span>
+                    <span>{card.actionText}</span>
                     <span>{card.scoringText}</span>
                   </button>
                 ))}
@@ -298,19 +301,19 @@ export const App = () => {
               {selectedCardForAction ? (
                 <article className="selected-card">
                   <strong>{selectedCardForAction.name}</strong>
-                  <span>{selectedCardForAction.developmentText}</span>
+                  <span>{selectedCardForAction.actionText}</span>
                   <span>{selectedCardForAction.scoringText}</span>
                 </article>
               ) : null}
               <div className="mode-tabs" role="tablist" aria-label="カード用途">
-                {(["development", "scoring", "basic"] as CardUseMode[]).map((candidate) => (
+                {(["production", "scoring", "basic"] as CardUseMode[]).map((candidate) => (
                   <button
                     key={candidate}
                     className={useMode === candidate ? "selected" : ""}
                     onClick={() => setUseMode(candidate)}
                     disabled={state.turnCardUsed}
                   >
-                    {candidate === "development" ? "生産" : candidate === "scoring" ? "得点" : "基本取得"}
+                    {candidate === "production" ? "生産" : candidate === "scoring" ? "得点" : "基本取得"}
                   </button>
                 ))}
               </div>
@@ -337,6 +340,7 @@ export const App = () => {
           {state.phase === "action" && state.turnCardUsed ? (
             <section className="actions">
               <h2>ターン終了時配置</h2>
+              {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
               <div className="payment-grid">
                 <label>
                   色

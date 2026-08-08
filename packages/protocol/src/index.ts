@@ -13,18 +13,18 @@ export type GamePhase = "draft" | "action" | "ended";
 export type AreaColor = CubeColor | "neutral";
 
 export type CardType =
-  | "red-development"
-  | "blue-development"
-  | "yellow-development";
+  | "red-production"
+  | "blue-production"
+  | "yellow-production";
 
-export type CardUseMode = "development" | "scoring" | "basic";
+export type CardUseMode = "production" | "scoring" | "basic";
 
 export type CardSummary = {
   instanceId: string;
   type: CardType;
   name: string;
   color: CubeColor | "multi";
-  developmentText: string;
+  actionText: string;
   scoringText: string;
 };
 
@@ -79,6 +79,11 @@ export type ProductionEntry = {
   cubes: CubeCounts;
 };
 
+export type TurnEndProductionPreview = {
+  color: CubeColor;
+  additionalCubes: number;
+};
+
 export type ActionLogEntry = {
   id: number;
   round: number;
@@ -113,6 +118,7 @@ export type PublicGameState = {
   currentPlayerId: string | null;
   currentPlayerName: string | null;
   turnCardUsed: boolean;
+  turnEndProduction: TurnEndProductionPreview | null;
   draftPickNumber: number;
   players: PlayerSummary[];
   areas: AreaSummary[];
