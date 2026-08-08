@@ -105,7 +105,7 @@ independent from area color.
 
 Neutral areas still have area level and still count toward world level. They do
 not produce cubes from cities and are not scored by red, blue, or yellow
-development cards.
+production cards.
 
 ## World Level
 
@@ -153,18 +153,24 @@ player has 8 cards. Cards are public in this prototype.
 Every action turn must consume exactly one hand card. Each card can be used in
 one of three ways:
 
-- Use the card's development or production action.
+- Use the card's production action.
 - Use the card's scoring action to gain immediate contribution.
 - Ignore the printed card effect and take one cube of any color.
 
 Initial card types:
 
-- Red development: gain 2 red cubes; score every connection between your city
-  pieces and red areas as `city level * area level`.
-- Blue development: gain 2 blue cubes; score every connection between your city
-  pieces and blue areas as `city level * area level`.
-- Yellow development: gain 2 yellow cubes; score every connection between your
-  city pieces and yellow areas as `city level * area level`.
+- Red production: immediately gain 1 red cube. When turn-end placement or skip
+  resolves, gain 1 red cube for each red area after that placement decision.
+  Scoring still counts every connection between your city pieces and red areas
+  as `city level * area level`.
+- Blue production: immediately gain 1 blue cube. When turn-end placement or skip
+  resolves, gain 1 blue cube for each blue area after that placement decision.
+  Scoring still counts every connection between your city pieces and blue areas
+  as `city level * area level`.
+- Yellow production: immediately gain 1 yellow cube. When turn-end placement or
+  skip resolves, gain 1 yellow cube for each yellow area after that placement
+  decision. Scoring still counts every connection between your city pieces and
+  yellow areas as `city level * area level`.
 
 A city touching multiple areas of the target color scores each connection.
 Neutral areas are not scored by these cards.
@@ -182,6 +188,10 @@ choices resolves. Placement cannot exceed the area capacity after the placement
 is applied. The placed cube becomes shared, and area color, area level, board
 cube total, world level, and area capacity are recalculated from the new board
 state.
+
+If the used card is a red, blue, or yellow production card, its additional
+production is resolved only after this placement decision. Skipping placement
+uses the current area colors.
 
 ## Cities
 

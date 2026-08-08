@@ -11,6 +11,7 @@ import {
   type LegalInfo,
   type PartialCubeCounts,
   type ProductionEntry,
+  type TurnEndProductionPreview,
   type PublicGameState,
 } from "@sdb/protocol";
 
@@ -63,6 +64,7 @@ export type GameState = {
   maxRounds: number;
   currentPlayerIndex: number;
   turnCardUsed: boolean;
+  turnEndProductionColor: CubeColor | null;
   draftPickNumber: number;
   players: PlayerState[];
   draftPacks: CardInstance[][];
@@ -83,36 +85,36 @@ export type BoardDefinition = {
 };
 
 export const cardDefinitions: Record<CardType, CardDefinition> = {
-  "red-development": {
-    type: "red-development",
-    name: "赤の発展",
+  "red-production": {
+    type: "red-production",
+    name: "赤の生産",
     color: "red",
-    developmentText: "赤キューブを2個獲得する",
+    actionText: "赤1個を得る。ターン終了時、赤エリア1つにつき赤1個を得る",
     scoringText: "赤エリアとの各接続の 都市Lv × エリアLv",
   },
-  "blue-development": {
-    type: "blue-development",
-    name: "青の発展",
+  "blue-production": {
+    type: "blue-production",
+    name: "青の生産",
     color: "blue",
-    developmentText: "青キューブを2個獲得する",
+    actionText: "青1個を得る。ターン終了時、青エリア1つにつき青1個を得る",
     scoringText: "青エリアとの各接続の 都市Lv × エリアLv",
   },
-  "yellow-development": {
-    type: "yellow-development",
-    name: "黄の発展",
+  "yellow-production": {
+    type: "yellow-production",
+    name: "黄の生産",
     color: "yellow",
-    developmentText: "黄キューブを2個獲得する",
+    actionText: "黄1個を得る。ターン終了時、黄エリア1つにつき黄1個を得る",
     scoringText: "黄エリアとの各接続の 都市Lv × エリアLv",
   },
 };
 
 const deckPattern: CardType[] = [
-  "red-development",
-  "blue-development",
-  "yellow-development",
-  "red-development",
-  "blue-development",
-  "yellow-development",
+  "red-production",
+  "blue-production",
+  "yellow-production",
+  "red-production",
+  "blue-production",
+  "yellow-production",
 ];
 
 const emptyCubes = (): CubeCounts => ({ red: 0, blue: 0, yellow: 0 });
@@ -263,6 +265,7 @@ export const createInitialState = (playerNames: string[]): GameState => {
     maxRounds,
     currentPlayerIndex: 0,
     turnCardUsed: false,
+    turnEndProductionColor: null,
     draftPickNumber: 1,
     players: names.map((name, index) => ({
       id: `player-${index + 1}`,
@@ -290,6 +293,19 @@ export const validateCubeTotals = (state: GameState): boolean => {
 
 const getArea = (state: GameState, areaId: string): AreaState | null =>
   state.areas.find((candidate) => candidate.id === areaId) ?? null;
+
+const countAreasOfColor = (state: GameState, color: CubeColor): number =>
+  state.areas.filter((area) => getAreaColor(area.cubes) === color).length;
+
+const getTurnEndProductionPreview = (
+  state: GameState
+): TurnEndProductionPreview | null =>
+  state.turnEndProductionColor
+    ? {
+        color: state.turnEndProductionColor,
+        additionalCubes: countAreasOfColor(state, state.turnEndProductionColor),
+      }
+    : null;
 
 const addHistory = (
   state: GameState,
@@ -389,6 +405,7 @@ const startRound = (state: GameState): void => {
   state.phase = "draft";
   state.currentPlayerIndex = 0;
   state.turnCardUsed = false;
+  state.turnEndProductionColor = null;
   state.draftPickNumber = 1;
   state.players.forEach((player) => {
     player.handCards = [];
@@ -406,6 +423,7 @@ const endGame = (state: GameState): void => {
   state.phase = "ended";
   state.currentPlayerIndex = 0;
   state.turnCardUsed = false;
+  state.turnEndProductionColor = null;
   state.draftPacks = [];
   addHistory(state, "GAME_END", null, "3ラウンド終了。最終得点を確定");
 };
@@ -426,6 +444,7 @@ const advanceAfterTurnEnd = (state: GameState): void => {
     if (state.players[index].handCards.length > 0) {
       state.currentPlayerIndex = index;
       state.turnCardUsed = false;
+      state.turnEndProductionColor = null;
       return;
     }
   }
@@ -608,7 +627,7 @@ const applyUseCard = (
     return { ok: true, state: next };
   }
 
-  if (action.mode !== "development") {
+  if (action.mode !== "production") {
     return reject(state, "カード用途が不正です。");
   }
 
@@ -616,8 +635,14 @@ const applyUseCard = (
   const next = cloneState(state);
   const nextPlayer = currentPlayer(next);
   const usedCard = removeCard(nextPlayer, action.cardInstanceId);
-  nextPlayer.cubes[producedColor] += 2;
-  addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で生産 (${producedColor}:2)`);
+  nextPlayer.cubes[producedColor] += 1;
+  next.turnEndProductionColor = producedColor;
+  addHistory(
+    next,
+    action.type,
+    action.playerId,
+    `${cardDefinitions[usedCard.type].name}で即時生産 (${producedColor}:1)`
+  );
   next.turnCardUsed = true;
   return { ok: true, state: next };
 };
@@ -649,6 +674,18 @@ const applyEndTurn = (
   } else {
     addHistory(next, action.type, action.playerId, "配置せずに手番終了");
   }
+  const productionColor = next.turnEndProductionColor;
+  if (productionColor) {
+    const additionalCubes = countAreasOfColor(next, productionColor);
+    nextPlayer.cubes[productionColor] += additionalCubes;
+    addHistory(
+      next,
+      action.type,
+      action.playerId,
+      `${cardDefinitions[`${productionColor}-production`].name}の追加生産 (${productionColor}:${additionalCubes})`
+    );
+  }
+  next.turnEndProductionColor = null;
   advanceAfterTurnEnd(next);
   return { ok: true, state: next };
 };
@@ -753,6 +790,7 @@ export const toPublicState = (state: GameState, canUndo = false): PublicGameStat
     currentPlayerId: activePlayer?.id ?? null,
     currentPlayerName: activePlayer?.name ?? null,
     turnCardUsed: state.turnCardUsed,
+    turnEndProduction: getTurnEndProductionPreview(state),
     draftPickNumber: state.draftPickNumber,
     players,
     areas: state.areas.map((area) => ({

@@ -4,12 +4,12 @@ import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import { type CardSummary, type PublicGameState } from "@sdb/protocol";
 
-const card = (instanceId: string, name = "赤の発展"): CardSummary => ({
+const card = (instanceId: string, name = "赤の生産"): CardSummary => ({
   instanceId,
-  type: "red-development",
+  type: "red-production",
   name,
   color: "red",
-  developmentText: "赤キューブを2個獲得する",
+  actionText: "赤1個を得る。ターン終了時、赤エリア1つにつき赤1個を得る",
   scoringText: "赤エリアとの各接続の 都市Lv × エリアLv",
 });
 
@@ -28,6 +28,7 @@ const baseState = (
   currentPlayerId: "player-1",
   currentPlayerName: "A",
   turnCardUsed,
+  turnEndProduction: turnCardUsed ? { color: "red", additionalCubes: 2 } : null,
   draftPickNumber: 1,
   players: [
     {
@@ -186,8 +187,14 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
     await screen.findByText(/ドラフト 1 \/ 8/);
-    await userEvent.click(screen.getByRole("button", { name: /赤の発展/ }));
+    await userEvent.click(screen.getByRole("button", { name: /赤の生産/ }));
     expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("DRAFT_PICK");
+  });
+
+  it("shows server-calculated turn-end production preview", async () => {
+    mockFetch([baseState("action", true)]);
+    render(<App />);
+    expect(await screen.findByText("追加生産見込み: 赤 2")).toBeInTheDocument();
   });
 
   it("only enables turn-end placement areas that fit the next capacity", async () => {

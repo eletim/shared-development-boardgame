@@ -49,7 +49,7 @@ const parseAction = (value: unknown): GameAction | null => {
     value.type === "USE_CARD" &&
     typeof value.cardInstanceId === "string" &&
     typeof value.mode === "string" &&
-    ["development", "scoring", "basic"].includes(value.mode)
+    ["production", "scoring", "basic"].includes(value.mode)
   ) {
     const action: Extract<GameAction, { type: "USE_CARD" }> = {
       type: value.type,
