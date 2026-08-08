@@ -103,23 +103,30 @@ independent from area color.
 | 3-4 | 2 |
 | 5-6 | 3 |
 
-Neutral areas still have area level and still count toward world level. They do
-not produce cubes from cities and are not scored by red, blue, or yellow
-production cards.
+Neutral areas still have area level. They do not produce cubes from cities and
+are not scored by red, blue, or yellow production cards.
 
 ## World Level
 
-World level is derived from the total number of shared cubes on the board.
+World level is unlocked by the highest current card-scoring contribution among
+all players. Board cube total does not directly change world level.
 
-| World level | Board cubes | Area capacity | Maximum buildable city level |
+| World level | Unlock condition | Area capacity | Maximum buildable city level |
 | --- | ---: | ---: | ---: |
-| 1 | 0-13 | 2 | 1 |
-| 2 | 14-27 | 4 | 2 |
-| 3 | 28+ | 6 | 3 |
+| 1 | Initial state | 2 | 1 |
+| 2 | Any player reaches 15+ contribution | 4 | 2 |
+| 3 | Any player reaches 45+ contribution | 6 | 3 |
 
 Area capacity is the total number of cubes in an area, not a per-color limit.
 Raising world level does not upgrade existing cities. It only unlocks higher
 city stack levels and larger area capacity.
+
+When a player first unlocks world level 2 or 3, that unlocking player chooses
+one red, blue, or yellow cube and gains it into their hand. Each world level's
+unlock bonus happens only once per game. The bonus choice must be resolved
+before the turn can proceed, but unlocking world level does not end the turn.
+After the bonus is claimed, the same player continues the current turn and may
+use the newly unlocked city level and area capacity immediately.
 
 ## Round Structure
 
@@ -184,10 +191,9 @@ choosing one of:
 - skip placement
 
 Turn-end placement is optional, but the turn does not advance until one of those
-choices resolves. Placement cannot exceed the area capacity after the placement
-is applied. The placed cube becomes shared, and area color, area level, board
-cube total, world level, and area capacity are recalculated from the new board
-state.
+choices resolves. Placement cannot exceed the current world level's area
+capacity. The placed cube becomes shared, and area color, area level, and board
+cube total are recalculated from the new board state.
 
 If the used card is a red, blue, or yellow production card, its additional
 production is resolved only after this placement decision. Skipping placement
@@ -223,6 +229,8 @@ the highest final contribution win; tied winners are shared.
 - Start a new game from the setup screen with 2-4 display names.
 - During draft, click a card from the current pack.
 - During action phase, choose a hand card and one of its three uses.
+- If a scoring card unlocks world level 2 or 3, choose the unlock bonus cube
+  color before continuing the same turn.
 - Use the city build panel before or after card use while the current player can
   pay the next stack level's city cost.
 - After card use, choose a color and area to place one cube, or click the skip
