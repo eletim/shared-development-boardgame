@@ -149,6 +149,52 @@ describe("server API", () => {
     expect(reset.json().state.phase).toBe("draft");
   });
 
+  it("accepts production card actions and undoes placement plus additional production", async () => {
+    await post("/api/game/start", { playerNames: ["A", "B"] });
+    let state = await draftAll();
+    const card = state.players[0].handCards.find((candidate: any) => candidate.type === "red-production");
+    expect(card).toBeTruthy();
+
+    const used = await post("/api/game/actions", {
+      action: {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: card.instanceId,
+        mode: "production",
+      },
+    });
+    expect(used.statusCode).toBe(200);
+    expect(used.json().state.players[0].cubes.red).toBe(1);
+    expect(used.json().state.turnEndProduction).toEqual({ color: "red", additionalCubes: 0 });
+
+    const ended = await post("/api/game/actions", {
+      action: {
+        type: "END_TURN",
+        playerId: "player-1",
+        placement: { areaId: "area-center", color: "red" },
+      },
+    });
+    expect(ended.statusCode).toBe(200);
+    expect(ended.json().state.currentPlayerId).toBe("player-2");
+    expect(ended.json().state.players[0].cubes.red).toBe(1);
+    expect(ended.json().state.areas.find((area: any) => area.id === "area-center").cubes.red).toBe(1);
+
+    const undoneEnd = await post("/api/game/undo");
+    state = undoneEnd.json().state;
+    expect(undoneEnd.statusCode).toBe(200);
+    expect(state.currentPlayerId).toBe("player-1");
+    expect(state.turnCardUsed).toBe(true);
+    expect(state.players[0].cubes.red).toBe(1);
+    expect(state.areas.find((area: any) => area.id === "area-center").cubes.red).toBe(0);
+
+    const undoneUse = await post("/api/game/undo");
+    state = undoneUse.json().state;
+    expect(undoneUse.statusCode).toBe(200);
+    expect(state.turnCardUsed).toBe(false);
+    expect(state.players[0].cubes.red).toBe(0);
+    expect(state.players[0].handCards.some((candidate: any) => candidate.instanceId === card.instanceId)).toBe(true);
+  });
+
   it("rejects actions after the game ended", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
     let state = await draftAll();
