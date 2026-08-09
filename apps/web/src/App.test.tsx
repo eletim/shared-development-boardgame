@@ -138,6 +138,133 @@ const mockFetch = (states: Array<PublicGameState | null>) => {
   );
 };
 
+const simulationRun = {
+  runId: "run-fixture",
+  createdAt: "2026-08-10T00:00:00.000Z",
+  gameCount: 1,
+  completedGames: 1,
+  failedGames: 0,
+  playerCount: 2,
+  runSeed: "fixture-seed",
+  agents: {
+    "player-1": { type: "random", name: "Random 1" },
+    "player-2": { type: "random", name: "Random 2" },
+  },
+  schemaVersion: "simulation-log-v1",
+};
+
+const simulationDetails = {
+  metadata: {
+    schemaVersion: "simulation-log-v1",
+    runId: simulationRun.runId,
+    createdAt: simulationRun.createdAt,
+    requestedGames: 1,
+    completedGames: 1,
+    failedGames: 0,
+    playerCount: 2,
+    runSeed: simulationRun.runSeed,
+    agents: simulationRun.agents,
+    rules: { package: "@sdb/game-core", schemaVersion: "game-core-v1" },
+    logSchema: { schemaVersion: "simulation-log-v1" },
+  },
+  summary: {
+    schemaVersion: "simulation-log-v1",
+    completedGames: 1,
+    failedGames: 0,
+    averageFinalScore: 10,
+    winRateByPlayerPosition: { "player-1": 1, "player-2": 0 },
+    averageFirstLastScoreGap: 5,
+    level2ReachRate: 1,
+    level2AverageReachStep: 4,
+    level3ReachRate: 0,
+    level3AverageReachStep: null,
+    cardUsesByType: {},
+    cardUseModeRatios: { production: 1, scoring: 0, basic: 0 },
+    averageCityCount: 1,
+    cityBuildsByLevel: { 1: 1, 2: 0, 3: 0 },
+    averageNeutralAreaCount: 3,
+  },
+  analysis: {
+    score: {
+      averageFinalScore: 10,
+      medianFinalScore: 10,
+      scoreDistribution: [{ bucket: "10-14", count: 1 }],
+      averageFirstLastScoreGap: 5,
+      winRateByPlayerIndex: { "player-1": 1, "player-2": 0 },
+      averageRankByPlayerIndex: { "player-1": 1, "player-2": 2 },
+    },
+    levels: {
+      level2: {
+        level: 2,
+        reachRate: 1,
+        averageReachRound: 1,
+        averageReachStep: 4,
+        timingDistribution: [{ round: 1, count: 1 }],
+        unlockPlayerIndexDistribution: { "player-1": 1 },
+      },
+      level3: {
+        level: 3,
+        reachRate: 0,
+        averageReachRound: null,
+        averageReachStep: null,
+        timingDistribution: [],
+        unlockPlayerIndexDistribution: {},
+      },
+    },
+    cards: [],
+    cities: {
+      averageCityPiecesPerGame: 1,
+      averageBuildsByLevel: { 1: 1, 2: 0, 3: 0 },
+      emptyIntersectionBuilds: 1,
+      stackedCityBuilds: 0,
+      stackingRate: 0,
+      winnerAverageCityCount: 1,
+      winnerAverageCitiesByLevel: { 1: 1, 2: 0, 3: 0 },
+    },
+    areas: {
+      finalAverageAreaCounts: { red: 1, blue: 0, yellow: 0, neutral: 3 },
+      roundEndColorDistribution: [{ round: 1, colors: { red: 1, blue: 0, yellow: 0, neutral: 3 } }],
+      roundEndAreaLevelDistribution: [{ round: 1, levels: { 0: 3, 1: 1, 2: 0, 3: 0 } }],
+      neutralAreaTrend: [{ round: 1, averageNeutralAreas: 3 }],
+      colorChangeCount: 0,
+      neutralizationCount: 0,
+    },
+  },
+  games: [
+    {
+      gameId: "game-000001",
+      gameSeed: "seed-1",
+      status: "completed",
+      finalScores: [{ playerId: "player-1", score: 10, rank: 1 }],
+      winners: ["player-1"],
+      level2Timing: { round: 1, step: 4, playerId: "player-1" },
+      level3Timing: null,
+      finalWorldLevel: 2,
+      scoreGap: 5,
+      tags: ["no-lv3"],
+    },
+  ],
+};
+
+const mockAppAndSimulationFetch = (initialState: PublicGameState | null) => {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url === "/api/game") {
+        return { ok: true, json: async () => ({ state: initialState }) };
+      }
+      if (url === "/api/simulations/runs") {
+        return { ok: true, json: async () => ({ runs: [simulationRun] }) };
+      }
+      if (url === "/api/simulations/runs/run-fixture") {
+        return { ok: true, json: async () => simulationDetails };
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    })
+  );
+};
+
 const lastRequestInit = (mock: ReturnType<typeof vi.fn>): RequestInit => {
   const call = mock.mock.calls[mock.mock.calls.length - 1] as unknown[];
   return (call[1] ?? {}) as RequestInit;
@@ -161,6 +288,41 @@ describe("App", () => {
     await screen.findByText(/Round 1 \/ 3/);
     await userEvent.click(screen.getByRole("button", { name: "New game" }));
     expect(screen.getByRole("button", { name: "ゲーム開始" })).toBeInTheDocument();
+  });
+
+  it("switches from the setup screen to Simulation Viewer and back without changing hook order", async () => {
+    mockAppAndSimulationFetch(null);
+    render(<App />);
+
+    await screen.findByRole("button", { name: "ゲーム開始" });
+    await userEvent.click(screen.getByRole("button", { name: "Simulation Viewer" }));
+
+    expect(await screen.findByRole("heading", { name: "Simulation Viewer" })).toBeInTheDocument();
+    expect(await screen.findByRole("cell", { name: "run-fixture" })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "開く" }));
+    expect(await screen.findByRole("heading", { name: "Run概要" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "通常ゲームへ戻る" }));
+    expect(await screen.findByRole("button", { name: "ゲーム開始" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Simulation Viewer" }));
+    expect(await screen.findByRole("heading", { name: "Simulation Viewer" })).toBeInTheDocument();
+  });
+
+  it("switches from an active game to Simulation Viewer and returns with the game state intact", async () => {
+    mockAppAndSimulationFetch(baseState("action"));
+    render(<App />);
+
+    expect(await screen.findByText(/Round 1 \/ 3/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Simulation Viewer" }));
+
+    expect(await screen.findByRole("heading", { name: "Simulation Viewer" })).toBeInTheDocument();
+    expect(await screen.findByRole("cell", { name: "run-fixture" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "通常ゲームへ戻る" }));
+    expect(await screen.findByText(/Round 1 \/ 3/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "カード選択" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Simulation Viewer" })).toHaveTextContent("Sim");
   });
 
   it("separates card controls from build and development controls without a city-production panel", async () => {

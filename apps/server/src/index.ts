@@ -1,4 +1,4 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import {
   applyAction,
   createInitialState,
@@ -13,6 +13,13 @@ import {
   type GameAction,
   type GameResponse,
 } from "@sdb/protocol";
+import {
+  listSimulationRuns,
+  loadSimulationGame,
+  loadSimulationRun,
+  resolveSimulationResultsDirectory,
+  SimulationDataError,
+} from "./simulation-viewer";
 
 type Session = {
   state: GameState | null;
@@ -137,11 +144,53 @@ const publicResponse = (session: Session): GameResponse => ({
   state: session.state ? toPublicState(session.state, session.undoStack.length > 0) : null,
 });
 
-export const createServer = (): FastifyInstance => {
+export const createServer = (options: { simulationResultsDirectory?: string } = {}): FastifyInstance => {
   const server = Fastify({ logger: false });
   const session: Session = { state: null, undoStack: [] };
 
+  const simulationBaseDirectory = async () =>
+    await resolveSimulationResultsDirectory(
+      options.simulationResultsDirectory ?? process.env.SIMULATION_RESULTS_DIR
+    );
+
+  const sendSimulationError = (reply: FastifyReply, error: unknown) => {
+    if (error instanceof SimulationDataError) {
+      return reply.code(error.statusCode).send({ error: error.message });
+    }
+    const message = error instanceof Error ? error.message : "simulationデータの読み込みに失敗しました。";
+    return reply.code(500).send({ error: message });
+  };
+
   server.get("/api/health", async () => ({ ok: true }));
+
+  server.get("/api/simulations/runs", async (_request, reply) => {
+    try {
+      const baseDirectory = await simulationBaseDirectory();
+      return { runs: await listSimulationRuns(baseDirectory) };
+    } catch (error) {
+      return sendSimulationError(reply, error);
+    }
+  });
+
+  server.get("/api/simulations/runs/:runId", async (request, reply) => {
+    try {
+      const params = request.params as { runId: string };
+      const baseDirectory = await simulationBaseDirectory();
+      return await loadSimulationRun(baseDirectory, params.runId);
+    } catch (error) {
+      return sendSimulationError(reply, error);
+    }
+  });
+
+  server.get("/api/simulations/runs/:runId/games/:gameId", async (request, reply) => {
+    try {
+      const params = request.params as { runId: string; gameId: string };
+      const baseDirectory = await simulationBaseDirectory();
+      return await loadSimulationGame(baseDirectory, params.runId, params.gameId);
+    } catch (error) {
+      return sendSimulationError(reply, error);
+    }
+  });
 
   server.get("/api/game", async () => publicResponse(session));
 

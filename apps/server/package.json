@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@sdb/game-core": "workspace:*",
+    "@sdb/simulation": "workspace:*",
     "@sdb/protocol": "workspace:*",
     "fastify": "^5.1.0"
   }
