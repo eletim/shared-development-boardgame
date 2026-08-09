@@ -246,9 +246,9 @@ describe("App", () => {
       ok: true,
       json: async () => ({ state: baseState("action", true) }),
     });
-    await userEvent.click(screen.getByRole("button", { name: "基本取得" }));
     await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
     expect(lastRequestBody(fetchMock)).toContain("USE_CARD");
+    expect(lastRequestBody(fetchMock)).toContain("production");
 
     expect(await screen.findByText(/ターン終了時配置/)).toBeInTheDocument();
     expect(screen.getByTestId("intersection-intersection-01")).toHaveClass("selectable");
