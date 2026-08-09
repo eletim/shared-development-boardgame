@@ -163,6 +163,20 @@ describe("App", () => {
     expect(screen.getByRole("button", { name: "ゲーム開始" })).toBeInTheDocument();
   });
 
+  it("separates card controls from build and development controls without a city-production panel", async () => {
+    mockFetch([baseState("action", true)]);
+    render(<App />);
+
+    const cardSection = (await screen.findByRole("heading", { name: "カード選択" })).closest("section");
+    const citySection = screen.getByRole("heading", { name: "都市建設" }).closest("section");
+    const developmentSection = screen.getByRole("heading", { name: "ターン終了時配置" }).closest("section");
+
+    expect(screen.queryByRole("heading", { name: "都市生産" })).not.toBeInTheDocument();
+    expect(cardSection).toHaveClass("card-actions");
+    expect(citySection).toHaveClass("city-build-actions");
+    expect(developmentSection).toHaveClass("development-actions");
+  });
+
   it("sends draft, card use, and build actions from the controls", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -170,7 +184,7 @@ describe("App", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await screen.findByText(/カード手番/);
+    await screen.findByText(/カード選択/);
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -241,7 +255,7 @@ describe("App", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await screen.findByText(/カード手番/);
+    await screen.findByText(/カード選択/);
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -273,7 +287,7 @@ describe("App", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await screen.findByText(/カード手番/);
+    await screen.findByText(/カード選択/);
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -380,7 +394,7 @@ describe("App", () => {
     }));
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
-    await screen.findByText(/カード手番/);
+    await screen.findByText(/カード選択/);
 
     fetchMock.mockResolvedValueOnce({
       ok: true,

@@ -8,7 +8,6 @@ import {
   type CubeColor,
   type GameAction,
   type GameResponse,
-  type PartialCubeCounts,
   type PublicGameState,
 } from "@sdb/protocol";
 
@@ -37,12 +36,6 @@ const api = async (path: string, body?: unknown): Promise<GameResponse> => {
   }
   return data;
 };
-
-const formatCubes = (cubes: PartialCubeCounts): string =>
-  cubeColors
-    .filter((color) => (cubes[color] ?? 0) > 0)
-    .map((color) => `${colorLabels[color]}${cubes[color]}`)
-    .join(" ");
 
 const emptyCubeCounts = (): Record<CubeColor, number> => ({ red: 0, blue: 0, yellow: 0 });
 
@@ -361,18 +354,9 @@ export const App = () => {
       </section>
 
       <section className="workspace">
-        <aside className="left-panel">
-          <section className="production">
-            <h2>都市生産</h2>
-            {state.lastProduction.map((entry) => (
-              <p key={entry.playerId}>
-                <strong>{entry.playerName}</strong> {formatCubes(entry.cubes) || "なし"}
-              </p>
-            ))}
-          </section>
-
+        <aside className="left-panel" aria-label="カード選択と都市建設・エリア開発">
           {state.phase === "draft" ? (
-            <section className="actions">
+            <section className="actions card-actions">
               <h2>ドラフト {state.draftPickNumber} / 8</h2>
               <div className="card-list">
                 {state.legal.draftPack.map((card) => (
@@ -411,47 +395,45 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" ? (
-            !state.pendingWorldLevelBonus ? (
-              <section className="actions city-build-actions">
-                <h2>都市建設</h2>
-                <label>
-                  交点
-                  <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
-                    <option value="">選択</option>
-                    {state.intersections
-                      .map((intersection) => (
-                        <option
-                          key={intersection.id}
-                          value={intersection.id}
-                          disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
-                        >
-                          {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
-                          {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <p className="hint">
-                  コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
-                </p>
-                <button
-                  className="primary wide"
-                  onClick={confirmBuild}
-                  disabled={
-                    !state.legal.canBuildCity ||
-                    !buildIntersectionId ||
-                    !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
-                  }
-                >
-                  都市を建設
-                </button>
-              </section>
-            ) : null
+            <section className="actions city-build-actions">
+              <h2>都市建設</h2>
+              <label>
+                交点
+                <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
+                  <option value="">選択</option>
+                  {state.intersections
+                    .map((intersection) => (
+                      <option
+                        key={intersection.id}
+                        value={intersection.id}
+                        disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
+                      >
+                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
+                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="hint">
+                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+              </p>
+              <button
+                className="primary wide"
+                onClick={confirmBuild}
+                disabled={
+                  !state.legal.canBuildCity ||
+                  !buildIntersectionId ||
+                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
+                }
+              >
+                都市を建設
+              </button>
+            </section>
           ) : null}
 
           {state.phase === "action" ? (
-            <section className="actions">
-              <h2>カード手番</h2>
+            <section className="actions card-actions">
+              <h2>カード選択</h2>
               {state.turnCardUsed ? (
                 <p className="hint">
                   {state.pendingWorldLevelBonus
@@ -515,7 +497,7 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
-            <section className="actions">
+            <section className="actions development-actions">
               <h2>ターン終了時配置</h2>
               {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
               <div className="payment-grid">
@@ -560,7 +542,7 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
-            <section className="actions">
+            <section className="actions development-actions">
               <h2>三色都市の開発</h2>
               <p className="hint">異なる2エリアへ最大1個ずつ配置できます。開発後、条件を満たせば赤青黄を1個ずつ得ます。</p>
               <div className="payment-grid">
@@ -632,7 +614,7 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
-            <section className="actions">
+            <section className="actions development-actions">
               <h2>中立開発</h2>
               <p className="hint">対象エリア1つへ最大2個配置できます。開発後に中立なら隣接都市数だけ任意色を得ます。</p>
               <label>

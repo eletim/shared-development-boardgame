@@ -210,19 +210,29 @@ select {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(250px, 280px) minmax(560px, 1fr) minmax(230px, 260px);
+  grid-template-columns: minmax(560px, 640px) minmax(660px, 1fr);
+  grid-template-areas:
+    "controls board"
+    "controls history";
   gap: 10px;
   align-items: start;
 }
 
-.left-panel,
+.left-panel {
+  grid-area: controls;
+  display: grid;
+  grid-template-columns: minmax(230px, 0.9fr) minmax(300px, 1.1fr);
+  gap: 10px;
+  align-content: start;
+}
+
 .right-panel {
+  grid-area: history;
   display: grid;
   align-content: start;
   gap: 10px;
 }
 
-.production,
 .actions,
 .history,
 .results {
@@ -232,7 +242,6 @@ select {
   padding: 10px;
 }
 
-.production h2,
 .actions h2,
 .history h2,
 .results h2 {
@@ -240,9 +249,14 @@ select {
   font-size: 16px;
 }
 
-.production p {
-  margin: 5px 0;
-  color: #5b5f56;
+.card-actions {
+  grid-column: 1;
+}
+
+.world-bonus,
+.city-build-actions,
+.development-actions {
+  grid-column: 2;
 }
 
 .mode-tabs {
@@ -336,18 +350,19 @@ select {
 }
 
 .board-panel {
+  grid-area: board;
   background: #fbfcf7;
   border: 1px solid #d8d9d0;
   border-radius: 8px;
-  height: min(66vh, 620px);
-  min-height: 510px;
+  height: min(72vh, 720px);
+  min-height: 570px;
   overflow: hidden;
 }
 
 .board-panel svg {
   width: 100%;
   height: 100%;
-  min-height: 510px;
+  min-height: 570px;
 }
 
 .hex {
@@ -465,7 +480,7 @@ select {
 }
 
 .history {
-  max-height: min(66vh, 620px);
+  max-height: 220px;
   overflow: auto;
 }
 
@@ -491,9 +506,26 @@ select {
 
   .workspace {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "controls"
+      "board"
+      "history";
   }
 
   .topbar {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .left-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .card-actions,
+  .world-bonus,
+  .city-build-actions,
+  .development-actions {
+    grid-column: 1;
   }
 }
