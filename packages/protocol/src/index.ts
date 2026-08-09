@@ -15,7 +15,9 @@ export type AreaColor = CubeColor | "neutral";
 export type CardType =
   | "red-production"
   | "blue-production"
-  | "yellow-production";
+  | "yellow-production"
+  | "tricolor-city"
+  | "neutral-development";
 
 export type CardUseMode = "production" | "scoring" | "basic";
 
@@ -84,6 +86,18 @@ export type TurnEndProductionPreview = {
   additionalCubes: number;
 };
 
+export type TurnEndDevelopmentPreview =
+  | {
+      type: "tricolor-city";
+      maxPlacements: 2;
+      placementRule: "distinct-areas";
+    }
+  | {
+      type: "neutral-development";
+      maxPlacements: 2;
+      placementRule: "same-area";
+    };
+
 export type WorldLevelBonusPending = {
   level: 2 | 3;
   playerId: string;
@@ -137,6 +151,7 @@ export type PublicGameState = {
   currentPlayerName: string | null;
   turnCardUsed: boolean;
   turnEndProduction: TurnEndProductionPreview | null;
+  turnEndDevelopment: TurnEndDevelopmentPreview | null;
   draftPickNumber: number;
   players: PlayerSummary[];
   areas: AreaSummary[];
@@ -173,6 +188,9 @@ export type GameAction =
       type: "END_TURN";
       playerId: string;
       placement?: EndTurnPlacement;
+      placements?: EndTurnPlacement[];
+      developmentAreaId?: string;
+      bonusCubes?: PartialCubeCounts;
     }
   | {
       type: "CLAIM_WORLD_LEVEL_BONUS";

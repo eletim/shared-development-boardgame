@@ -33,6 +33,7 @@ const baseState = (
   currentPlayerName: "A",
   turnCardUsed,
   turnEndProduction: turnCardUsed ? { color: "red", additionalCubes: 2 } : null,
+  turnEndDevelopment: null,
   draftPickNumber: 1,
   players: [
     {
@@ -399,6 +400,89 @@ describe("App", () => {
     mockFetch([baseState("action", true)]);
     render(<App />);
     expect(await screen.findByText("追加生産見込み: 赤 2")).toBeInTheDocument();
+  });
+
+  it("sends tricolor city placements to two distinct areas", async () => {
+    const tricolorState = baseState("action", true);
+    tricolorState.turnEndProduction = null;
+    tricolorState.turnEndDevelopment = {
+      type: "tricolor-city",
+      maxPlacements: 2,
+      placementRule: "distinct-areas",
+    };
+    tricolorState.areas.push({
+      id: "area-east",
+      label: "東",
+      q: 1,
+      r: 0,
+      x: 120,
+      y: 0,
+      cubes: { red: 0, blue: 0, yellow: 0 },
+      cubeTotal: 0,
+      areaLevel: 0,
+      areaColor: "neutral",
+    });
+    tricolorState.legal.placeableAreaIds = ["area-center", "area-east"];
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: tricolorState }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "三色都市の開発" })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("1個目 エリア"), "area-center");
+    await userEvent.selectOptions(screen.getByLabelText("2個目 色"), "blue");
+    await userEvent.selectOptions(screen.getByLabelText("2個目 エリア"), "area-east");
+    await userEvent.click(screen.getByRole("button", { name: "選択分を置いて手番終了" }));
+
+    expect(lastRequestBody(fetchMock)).toContain("END_TURN");
+    expect(lastRequestBody(fetchMock)).toContain("placements");
+    expect(lastRequestBody(fetchMock)).toContain("area-center");
+    expect(lastRequestBody(fetchMock)).toContain("area-east");
+  });
+
+  it("sends neutral development placements and arbitrary bonus cube choices", async () => {
+    const neutralState = baseState("action", true);
+    neutralState.turnEndProduction = null;
+    neutralState.turnEndDevelopment = {
+      type: "neutral-development",
+      maxPlacements: 2,
+      placementRule: "same-area",
+    };
+    neutralState.areas[0].cubes = { red: 0, blue: 1, yellow: 0 };
+    neutralState.areas[0].cubeTotal = 1;
+    neutralState.areas[0].areaColor = "blue";
+    neutralState.areas[0].areaLevel = 1;
+    neutralState.boardCubeTotal = 1;
+    neutralState.intersections[0].cityStack = [
+      { playerId: "player-1", playerColor: "#d73a31", level: 1 },
+      { playerId: "player-2", playerColor: "#1f6feb", level: 2 },
+    ];
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: neutralState }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    expect(await screen.findByRole("heading", { name: "中立開発" })).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("対象エリア"), "area-center");
+    await userEvent.selectOptions(screen.getByLabelText("配置数"), "1");
+    expect(await screen.findByText(/任意色取得 2個/)).toBeInTheDocument();
+    await userEvent.clear(screen.getByLabelText("赤取得"));
+    await userEvent.type(screen.getByLabelText("赤取得"), "1");
+    await userEvent.clear(screen.getByLabelText("青取得"));
+    await userEvent.type(screen.getByLabelText("青取得"), "1");
+
+    await userEvent.click(screen.getByRole("button", { name: "中立開発を解決して手番終了" }));
+    expect(lastRequestBody(fetchMock)).toContain("END_TURN");
+    expect(lastRequestBody(fetchMock)).toContain("developmentAreaId");
+    expect(lastRequestBody(fetchMock)).toContain("bonusCubes");
+    expect(lastRequestBody(fetchMock)).toContain('"red":1');
+    expect(lastRequestBody(fetchMock)).toContain('"blue":1');
   });
 
   it("shows world level progress and sends unlock bonus choices", async () => {

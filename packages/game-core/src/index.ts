@@ -11,6 +11,7 @@ import {
   type LegalInfo,
   type PartialCubeCounts,
   type ProductionEntry,
+  type TurnEndDevelopmentPreview,
   type TurnEndProductionPreview,
   type PublicGameState,
   type WorldLevelBonusPending,
@@ -28,6 +29,7 @@ const worldLevelThresholds = { 2: 15, 3: 45 } as const;
 
 type WorldLevel = 1 | 2 | 3;
 type UnlockableWorldLevel = 2 | 3;
+type SpecialDevelopmentCardType = "tricolor-city" | "neutral-development";
 
 export type CardDefinition = Omit<CardSummary, "instanceId">;
 
@@ -85,6 +87,7 @@ export type GameState = {
   currentPlayerIndex: number;
   turnCardUsed: boolean;
   turnEndProductionColor: CubeColor | null;
+  turnEndSpecialDevelopment: SpecialDevelopmentCardType | null;
   draftPickNumber: number;
   players: PlayerState[];
   draftPacks: CardInstance[][];
@@ -126,12 +129,28 @@ export const cardDefinitions: Record<CardType, CardDefinition> = {
     actionText: "黄1個を得る。ターン終了時、黄エリア1つにつき黄1個を得る",
     scoringText: "黄エリアとの各接続の 都市Lv × エリアLv",
   },
+  "tricolor-city": {
+    type: "tricolor-city",
+    name: "三色都市",
+    color: "multi",
+    actionText: "開発フェーズ: 異なる2エリアへ最大1個ずつ。開発後、赤青黄すべてに囲まれた自分の都市があれば赤青黄1個ずつ得る",
+    scoringText: "得点用途なし",
+  },
+  "neutral-development": {
+    type: "neutral-development",
+    name: "中立開発",
+    color: "multi",
+    actionText: "開発フェーズ: 1エリアへ最大2個。開発後、そのエリアが中立なら隣接都市数だけ任意色を得る",
+    scoringText: "得点用途なし",
+  },
 };
 
 const deckPattern: CardType[] = [
   "red-production",
   "blue-production",
   "yellow-production",
+  "tricolor-city",
+  "neutral-development",
   "red-production",
   "blue-production",
   "yellow-production",
@@ -288,6 +307,7 @@ export const createInitialState = (playerNames: string[]): GameState => {
     currentPlayerIndex: 0,
     turnCardUsed: false,
     turnEndProductionColor: null,
+    turnEndSpecialDevelopment: null,
     draftPickNumber: 1,
     players: names.map((name, index) => ({
       id: `player-${index + 1}`,
@@ -328,6 +348,26 @@ const getTurnEndProductionPreview = (
         additionalCubes: countAreasOfColor(state, state.turnEndProductionColor),
       }
     : null;
+
+const getTurnEndDevelopmentPreview = (
+  state: GameState
+): TurnEndDevelopmentPreview | null => {
+  if (state.turnEndSpecialDevelopment === "tricolor-city") {
+    return {
+      type: "tricolor-city",
+      maxPlacements: 2,
+      placementRule: "distinct-areas",
+    };
+  }
+  if (state.turnEndSpecialDevelopment === "neutral-development") {
+    return {
+      type: "neutral-development",
+      maxPlacements: 2,
+      placementRule: "same-area",
+    };
+  }
+  return null;
+};
 
 const addHistory = (
   state: GameState,
@@ -442,6 +482,7 @@ const startRound = (state: GameState): void => {
   state.currentPlayerIndex = 0;
   state.turnCardUsed = false;
   state.turnEndProductionColor = null;
+  state.turnEndSpecialDevelopment = null;
   state.draftPickNumber = 1;
   state.players.forEach((player) => {
     player.handCards = [];
@@ -460,6 +501,7 @@ const endGame = (state: GameState): void => {
   state.currentPlayerIndex = 0;
   state.turnCardUsed = false;
   state.turnEndProductionColor = null;
+  state.turnEndSpecialDevelopment = null;
   state.draftPacks = [];
   addHistory(state, "GAME_END", null, "3ラウンド終了。最終得点を確定");
 };
@@ -481,6 +523,7 @@ const advanceAfterTurnEnd = (state: GameState): void => {
       state.currentPlayerIndex = index;
       state.turnCardUsed = false;
       state.turnEndProductionColor = null;
+      state.turnEndSpecialDevelopment = null;
       return;
     }
   }
@@ -549,6 +592,63 @@ const applyEndTurnPlacement = (
   if (!area) return;
   player.cubes[placement.color] -= 1;
   area.cubes[placement.color] += 1;
+};
+
+const validateAndApplyDevelopmentPlacements = (
+  state: GameState,
+  player: PlayerState,
+  placements: NonNullable<Extract<GameAction, { type: "END_TURN" }>["placements"]>
+): string | null => {
+  for (const placement of placements) {
+    const placementError = validateEndTurnPlacement(state, player, placement);
+    if (placementError) return placementError;
+    applyEndTurnPlacement(state, player, placement);
+  }
+  return null;
+};
+
+const hasOwnTricolorCity = (state: GameState, playerId: string): boolean =>
+  state.intersections.some((intersection) => {
+    const hasOwnCityPiece = intersection.cityStack.some((city) => city.playerId === playerId);
+    if (!hasOwnCityPiece) return false;
+    const adjacentColors = new Set(
+      intersection.adjacentAreaIds
+        .map((areaId) => {
+          const area = getArea(state, areaId);
+          return area ? getAreaColor(area.cubes) : "neutral";
+        })
+        .filter((color): color is CubeColor => color !== "neutral")
+    );
+    return cubeColors.every((color) => adjacentColors.has(color));
+  });
+
+const countAdjacentCityPieces = (state: GameState, areaId: string): number =>
+  state.intersections
+    .filter((intersection) => intersection.adjacentAreaIds.includes(areaId))
+    .reduce((total, intersection) => total + intersection.cityStack.length, 0);
+
+const normalizeBonusCubes = (bonusCubes: PartialCubeCounts | undefined): CubeCounts => {
+  const normalized = emptyCubes();
+  for (const color of cubeColors) {
+    normalized[color] = bonusCubes?.[color] ?? 0;
+  }
+  return normalized;
+};
+
+const validateBonusCubes = (
+  bonusCubes: PartialCubeCounts | undefined,
+  expectedTotal: number
+): { error: string | null; cubes: CubeCounts } => {
+  const cubes = normalizeBonusCubes(bonusCubes);
+  for (const color of cubeColors) {
+    if (!Number.isInteger(cubes[color]) || cubes[color] < 0) {
+      return { error: "取得キューブ数が不正です。", cubes };
+    }
+  }
+  if (cubeTotal(cubes) !== expectedTotal) {
+    return { error: `任意色キューブを合計${expectedTotal}個選んでください。`, cubes };
+  }
+  return { error: null, cubes };
 };
 
 const removeCard = (player: PlayerState, cardInstanceId: string): CardInstance => {
@@ -677,6 +777,9 @@ const applyUseCard = (
   }
 
   if (action.mode === "scoring") {
+    if (cardDefinitions[card.type].color === "multi") {
+      return reject(state, "このカードに得点用途はありません。");
+    }
     const gained = scoreForCard(state, action.playerId, card.type);
     const next = cloneState(state);
     const nextPlayer = currentPlayer(next);
@@ -690,6 +793,21 @@ const applyUseCard = (
 
   if (action.mode !== "production") {
     return reject(state, "カード用途が不正です。");
+  }
+
+  if (card.type === "tricolor-city" || card.type === "neutral-development") {
+    const next = cloneState(state);
+    const nextPlayer = currentPlayer(next);
+    const usedCard = removeCard(nextPlayer, action.cardInstanceId);
+    next.turnEndSpecialDevelopment = usedCard.type as SpecialDevelopmentCardType;
+    addHistory(
+      next,
+      action.type,
+      action.playerId,
+      `${cardDefinitions[usedCard.type].name}を行動として使用`
+    );
+    next.turnCardUsed = true;
+    return { ok: true, state: next };
   }
 
   const producedColor = cardDefinitions[card.type].color as CubeColor;
@@ -720,35 +838,118 @@ const applyEndTurn = (
   if (!state.turnCardUsed) {
     return reject(state, "手番終了前にカードを1枚使用してください。");
   }
-  const player = currentPlayer(state);
-  const placementError = validateEndTurnPlacement(state, player, action.placement);
-  if (placementError) return reject(state, placementError);
-
   const next = cloneState(state);
   const nextPlayer = currentPlayer(next);
-  if (action.placement) {
-    applyEndTurnPlacement(next, nextPlayer, action.placement);
-    addHistory(
-      next,
-      action.type,
-      action.playerId,
-      `ターン終了時配置 (${action.placement.areaId}, ${action.placement.color}:1)`
-    );
-  } else {
-    addHistory(next, action.type, action.playerId, "配置せずに手番終了");
+
+  if (!state.turnEndSpecialDevelopment) {
+    if (
+      action.placements !== undefined ||
+      action.developmentAreaId !== undefined ||
+      action.bonusCubes !== undefined
+    ) {
+      return reject(state, "通常ターンでは複数配置や追加取得はできません。");
+    }
+    const placementError = validateEndTurnPlacement(next, nextPlayer, action.placement);
+    if (placementError) return reject(state, placementError);
+    if (action.placement) {
+      applyEndTurnPlacement(next, nextPlayer, action.placement);
+      addHistory(
+        next,
+        action.type,
+        action.playerId,
+        `ターン終了時配置 (${action.placement.areaId}, ${action.placement.color}:1)`
+      );
+    } else {
+      addHistory(next, action.type, action.playerId, "配置せずに手番終了");
+    }
+    const productionColor = next.turnEndProductionColor;
+    if (productionColor) {
+      const additionalCubes = countAreasOfColor(next, productionColor);
+      nextPlayer.cubes[productionColor] += additionalCubes;
+      addHistory(
+        next,
+        action.type,
+        action.playerId,
+        `${cardDefinitions[`${productionColor}-production`].name}の追加生産 (${productionColor}:${additionalCubes})`
+      );
+    }
+    next.turnEndProductionColor = null;
+    advanceAfterTurnEnd(next);
+    return { ok: true, state: next };
   }
-  const productionColor = next.turnEndProductionColor;
-  if (productionColor) {
-    const additionalCubes = countAreasOfColor(next, productionColor);
-    nextPlayer.cubes[productionColor] += additionalCubes;
+
+  if (action.placement !== undefined) {
+    return reject(state, "このカード使用ターンでは通常配置はできません。");
+  }
+
+  const placements = action.placements ?? [];
+  if (placements.length > 2) {
+    return reject(state, "開発配置は最大2個までです。");
+  }
+
+  if (state.turnEndSpecialDevelopment === "tricolor-city") {
+    if (action.developmentAreaId !== undefined || action.bonusCubes !== undefined) {
+      return reject(state, "三色都市では対象エリア指定や任意色取得はできません。");
+    }
+    if (new Set(placements.map((placement) => placement.areaId)).size !== placements.length) {
+      return reject(state, "三色都市では同じエリアへ2個置けません。");
+    }
+    const placementError = validateAndApplyDevelopmentPlacements(next, nextPlayer, placements);
+    if (placementError) return reject(state, placementError);
     addHistory(
       next,
       action.type,
       action.playerId,
-      `${cardDefinitions[`${productionColor}-production`].name}の追加生産 (${productionColor}:${additionalCubes})`
+      placements.length > 0
+        ? `三色都市の開発配置 (${placements.map((placement) => `${placement.areaId}:${placement.color}`).join(", ")})`
+        : "三色都市の開発配置をスキップ"
     );
+    if (hasOwnTricolorCity(next, action.playerId)) {
+      for (const color of cubeColors) {
+        nextPlayer.cubes[color] += 1;
+      }
+      addHistory(next, action.type, action.playerId, "三色都市ボーナスで赤青黄を1個ずつ取得");
+    }
+  } else {
+    const targetAreaId = action.developmentAreaId;
+    if (!targetAreaId) {
+      return reject(state, "中立開発の対象エリアを指定してください。");
+    }
+    if (!getArea(next, targetAreaId)) return reject(state, "存在しないエリアです。");
+    if (placements.some((placement) => placement.areaId !== targetAreaId)) {
+      return reject(state, "中立開発では対象エリア以外へ配置できません。");
+    }
+    const placementError = validateAndApplyDevelopmentPlacements(next, nextPlayer, placements);
+    if (placementError) return reject(state, placementError);
+    addHistory(
+      next,
+      action.type,
+      action.playerId,
+      placements.length > 0
+        ? `中立開発の開発配置 (${targetAreaId}: ${placements.map((placement) => placement.color).join(", ")})`
+        : `中立開発の開発配置をスキップ (${targetAreaId})`
+    );
+    const targetArea = getArea(next, targetAreaId);
+    const adjacentCityPieces =
+      targetArea && getAreaColor(targetArea.cubes) === "neutral"
+        ? countAdjacentCityPieces(next, targetAreaId)
+        : 0;
+    const bonus = validateBonusCubes(action.bonusCubes, adjacentCityPieces);
+    if (bonus.error) return reject(state, bonus.error);
+    for (const color of cubeColors) {
+      nextPlayer.cubes[color] += bonus.cubes[color];
+    }
+    if (adjacentCityPieces > 0) {
+      addHistory(
+        next,
+        action.type,
+        action.playerId,
+        `中立開発ボーナスで${formatCubes(bonus.cubes)}を取得`
+      );
+    }
   }
   next.turnEndProductionColor = null;
+  next.turnEndSpecialDevelopment = null;
   advanceAfterTurnEnd(next);
   return { ok: true, state: next };
 };
@@ -910,6 +1111,7 @@ export const toPublicState = (state: GameState, canUndo = false): PublicGameStat
     currentPlayerName: activePlayer?.name ?? null,
     turnCardUsed: state.turnCardUsed,
     turnEndProduction: getTurnEndProductionPreview(state),
+    turnEndDevelopment: getTurnEndDevelopmentPreview(state),
     draftPickNumber: state.draftPickNumber,
     players,
     areas: state.areas.map((area) => ({
