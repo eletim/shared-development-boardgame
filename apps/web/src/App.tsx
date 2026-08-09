@@ -8,7 +8,6 @@ import {
   type CubeColor,
   type GameAction,
   type GameResponse,
-  type PartialCubeCounts,
   type PublicGameState,
 } from "@sdb/protocol";
 
@@ -38,13 +37,13 @@ const api = async (path: string, body?: unknown): Promise<GameResponse> => {
   return data;
 };
 
-const formatCubes = (cubes: PartialCubeCounts): string =>
-  cubeColors
-    .filter((color) => (cubes[color] ?? 0) > 0)
-    .map((color) => `${colorLabels[color]}${cubes[color]}`)
-    .join(" ");
-
 const emptyCubeCounts = (): Record<CubeColor, number> => ({ red: 0, blue: 0, yellow: 0 });
+const minBoardZoom = 0.75;
+const maxBoardZoom = 1.5;
+const boardZoomStep = 0.25;
+
+const clampBoardZoom = (value: number) =>
+  Math.min(maxBoardZoom, Math.max(minBoardZoom, value));
 
 export const App = () => {
   const [state, setState] = useState<PublicGameState | null>(null);
@@ -361,18 +360,9 @@ export const App = () => {
       </section>
 
       <section className="workspace">
-        <aside className="left-panel">
-          <section className="production">
-            <h2>都市生産</h2>
-            {state.lastProduction.map((entry) => (
-              <p key={entry.playerId}>
-                <strong>{entry.playerName}</strong> {formatCubes(entry.cubes) || "なし"}
-              </p>
-            ))}
-          </section>
-
+        <aside className="card-panel" aria-label="カード選択">
           {state.phase === "draft" ? (
-            <section className="actions">
+            <section className="actions card-actions">
               <h2>ドラフト {state.draftPickNumber} / 8</h2>
               <div className="card-list">
                 {state.legal.draftPack.map((card) => (
@@ -387,71 +377,8 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" ? (
-            state.pendingWorldLevelBonus ? (
-              <section className="actions world-bonus">
-                <h2>世界Lv{state.pendingWorldLevelBonus.level}を解禁しました</h2>
-                <p className="hint">
-                  {state.pendingWorldLevelBonus.playerName}はボーナスとして好きなキューブを1個選んでください。
-                </p>
-                <div className="bonus-buttons" aria-label="解禁ボーナス">
-                  {cubeColors.map((color) => (
-                    <button
-                      key={color}
-                      className={`cube-choice ${color}`}
-                      onClick={() => claimWorldLevelBonus(color)}
-                      disabled={!state.legal.canClaimWorldLevelBonus}
-                    >
-                      {colorLabels[color]}
-                    </button>
-                  ))}
-                </div>
-                <p className="hint">取得後も{state.currentPlayerName}のターンを継続します。</p>
-              </section>
-            ) : null
-          ) : null}
-
-          {state.phase === "action" ? (
-            !state.pendingWorldLevelBonus ? (
-              <section className="actions city-build-actions">
-                <h2>都市建設</h2>
-                <label>
-                  交点
-                  <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
-                    <option value="">選択</option>
-                    {state.intersections
-                      .map((intersection) => (
-                        <option
-                          key={intersection.id}
-                          value={intersection.id}
-                          disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
-                        >
-                          {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
-                          {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                <p className="hint">
-                  コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
-                </p>
-                <button
-                  className="primary wide"
-                  onClick={confirmBuild}
-                  disabled={
-                    !state.legal.canBuildCity ||
-                    !buildIntersectionId ||
-                    !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
-                  }
-                >
-                  都市を建設
-                </button>
-              </section>
-            ) : null
-          ) : null}
-
-          {state.phase === "action" ? (
-            <section className="actions">
-              <h2>カード手番</h2>
+            <section className="actions card-actions">
+              <h2>カード選択</h2>
               {state.turnCardUsed ? (
                 <p className="hint">
                   {state.pendingWorldLevelBonus
@@ -513,9 +440,72 @@ export const App = () => {
               </button>
             </section>
           ) : null}
+        </aside>
+
+        <aside className="operations-panel" aria-label="都市建設・エリア開発">
+          {state.phase === "action" ? (
+            state.pendingWorldLevelBonus ? (
+              <section className="actions world-bonus">
+                <h2>世界Lv{state.pendingWorldLevelBonus.level}を解禁しました</h2>
+                <p className="hint">
+                  {state.pendingWorldLevelBonus.playerName}はボーナスとして好きなキューブを1個選んでください。
+                </p>
+                <div className="bonus-buttons" aria-label="解禁ボーナス">
+                  {cubeColors.map((color) => (
+                    <button
+                      key={color}
+                      className={`cube-choice ${color}`}
+                      onClick={() => claimWorldLevelBonus(color)}
+                      disabled={!state.legal.canClaimWorldLevelBonus}
+                    >
+                      {colorLabels[color]}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">取得後も{state.currentPlayerName}のターンを継続します。</p>
+              </section>
+            ) : null
+          ) : null}
+
+          {state.phase === "action" ? (
+            <section className="actions city-build-actions">
+              <h2>都市建設</h2>
+              <label>
+                交点
+                <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
+                  <option value="">選択</option>
+                  {state.intersections
+                    .map((intersection) => (
+                      <option
+                        key={intersection.id}
+                        value={intersection.id}
+                        disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
+                      >
+                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
+                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="hint">
+                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+              </p>
+              <button
+                className="primary wide"
+                onClick={confirmBuild}
+                disabled={
+                  !state.legal.canBuildCity ||
+                  !buildIntersectionId ||
+                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
+                }
+              >
+                都市を建設
+              </button>
+            </section>
+          ) : null}
 
           {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
-            <section className="actions">
+            <section className="actions development-actions">
               <h2>ターン終了時配置</h2>
               {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
               <div className="payment-grid">
@@ -560,7 +550,7 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
-            <section className="actions">
+            <section className="actions development-actions">
               <h2>三色都市の開発</h2>
               <p className="hint">異なる2エリアへ最大1個ずつ配置できます。開発後、条件を満たせば赤青黄を1個ずつ得ます。</p>
               <div className="payment-grid">
@@ -632,7 +622,7 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
-            <section className="actions">
+            <section className="actions development-actions">
               <h2>中立開発</h2>
               <p className="hint">対象エリア1つへ最大2個配置できます。開発後に中立なら隣接都市数だけ任意色を得ます。</p>
               <label>
@@ -769,84 +759,124 @@ const Board = ({
   onAreaSelect: (id: string) => void;
   onIntersectionSelect: (id: string) => void;
 }) => {
+  const [zoom, setZoom] = useState(1);
   const xCoordinates = [...state.areas.map((area) => area.x), ...state.intersections.map((item) => item.x)];
   const yCoordinates = [...state.areas.map((area) => area.y), ...state.intersections.map((item) => item.y)];
   const minX = Math.min(...xCoordinates) - 130;
   const maxX = Math.max(...xCoordinates) + 130;
   const minY = Math.min(...yCoordinates) - 130;
   const maxY = Math.max(...yCoordinates) + 130;
+  const zoomPercent = Math.round(zoom * 100);
 
   return (
     <section className="board-panel" aria-label="盤面">
-      <svg viewBox={`${minX} ${minY} ${maxX - minX} ${maxY - minY}`} role="img" aria-label="六角形盤面">
-        {state.areas.map((area) => {
-          const points = Array.from({ length: 6 }, (_, index) => {
-            const angle = ((30 + index * 60) * Math.PI) / 180;
-            return `${area.x + 86 * Math.cos(angle)},${area.y + 86 * Math.sin(angle)}`;
-          }).join(" ");
-          const selectable =
-            state.status === "active" && placeableAreaIds.includes(area.id);
-          return (
-            <g key={area.id}>
-              <polygon
-                points={points}
-                data-testid={`area-${area.id}`}
-                className={`hex ${area.areaColor} ${selectable ? "selectable" : ""} ${selectedAreaId === area.id ? "selected" : ""}`}
-                onClick={() => selectable && onAreaSelect(area.id)}
-              />
-              <text x={area.x} y={area.y - 36} className="area-label">
-                {area.label}
-              </text>
-              <text x={area.x} y={area.y - 13} className="area-count">
-                {areaColorLabels[area.areaColor]} Lv{area.areaLevel} {area.cubeTotal}/{state.areaCapacity}
-              </text>
-              {cubeColors.map((color, index) => (
-                <g key={color} transform={`translate(${area.x - 38 + index * 38} ${area.y + 24})`}>
-                  <rect className={`cube-icon ${color}`} x="-13" y="-13" width="26" height="26" rx="4" />
-                  <text className="cube-text" y="5">
-                    {area.cubes[color]}
-                  </text>
-                </g>
-              ))}
-            </g>
-          );
-        })}
-        {state.intersections.map((intersection) => {
-          const legalBuild = state.legal.buildableIntersectionIds.includes(intersection.id);
-          const selectable =
-            state.status === "active" && legalBuild;
-          const stackLabel = intersection.cityStack.length
-            ? intersection.cityStack.map((city) => `Lv${city.level}`).join(" / ")
-            : "空";
-          return (
-            <g
-              key={intersection.id}
-              data-testid={`intersection-${intersection.id}`}
-              className={`intersection ${selectable ? "selectable" : ""} ${selectedIntersectionId === intersection.id ? "selected" : ""}`}
-              onClick={() => selectable && onIntersectionSelect(intersection.id)}
-            >
-              {intersection.cityStack.length === 0 ? (
-                <circle
-                  cx={intersection.x}
-                  cy={intersection.y}
-                  r={legalBuild ? 10 : 7}
-                  fill="#ffffff"
+      <div className="board-toolbar" aria-label="盤面Zoom">
+        <button
+          type="button"
+          aria-label="盤面を縮小"
+          title="盤面を縮小"
+          onClick={() => setZoom((current) => clampBoardZoom(current - boardZoomStep))}
+          disabled={zoom <= minBoardZoom}
+        >
+          -
+        </button>
+        <span data-testid="board-zoom-readout">{zoomPercent}%</span>
+        <button
+          type="button"
+          aria-label="盤面を100%に戻す"
+          title="盤面を100%に戻す"
+          onClick={() => setZoom(1)}
+          disabled={zoom === 1}
+        >
+          100%
+        </button>
+        <button
+          type="button"
+          aria-label="盤面を拡大"
+          title="盤面を拡大"
+          onClick={() => setZoom((current) => clampBoardZoom(current + boardZoomStep))}
+          disabled={zoom >= maxBoardZoom}
+        >
+          +
+        </button>
+      </div>
+      <div className="board-viewport">
+        <svg
+          data-testid="board-svg"
+          viewBox={`${minX} ${minY} ${maxX - minX} ${maxY - minY}`}
+          role="img"
+          aria-label="六角形盤面"
+          style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}
+        >
+          {state.areas.map((area) => {
+            const points = Array.from({ length: 6 }, (_, index) => {
+              const angle = ((30 + index * 60) * Math.PI) / 180;
+              return `${area.x + 86 * Math.cos(angle)},${area.y + 86 * Math.sin(angle)}`;
+            }).join(" ");
+            const selectable =
+              state.status === "active" && placeableAreaIds.includes(area.id);
+            return (
+              <g key={area.id}>
+                <polygon
+                  points={points}
+                  data-testid={`area-${area.id}`}
+                  className={`hex ${area.areaColor} ${selectable ? "selectable" : ""} ${selectedAreaId === area.id ? "selected" : ""}`}
+                  onClick={() => selectable && onAreaSelect(area.id)}
                 />
-              ) : (
-                intersection.cityStack.map((city, index) => (
-                  <g key={`${intersection.id}-${city.level}`} transform={`translate(${intersection.x} ${intersection.y - index * 14})`}>
-                    <rect className="city-stack-block" x="-13" y="-8" width="26" height="14" rx="2" fill={city.playerColor} />
-                    <text className="city-stack-text" y="3">
-                      L{city.level}
+                <text x={area.x} y={area.y - 36} className="area-label">
+                  {area.label}
+                </text>
+                <text x={area.x} y={area.y - 13} className="area-count">
+                  {areaColorLabels[area.areaColor]} Lv{area.areaLevel} {area.cubeTotal}/{state.areaCapacity}
+                </text>
+                {cubeColors.map((color, index) => (
+                  <g key={color} transform={`translate(${area.x - 38 + index * 38} ${area.y + 24})`}>
+                    <rect className={`cube-icon ${color}`} x="-13" y="-13" width="26" height="26" rx="4" />
+                    <text className="cube-text" y="5">
+                      {area.cubes[color]}
                     </text>
                   </g>
-                ))
-              )}
-              <title>{intersection.id}: {stackLabel}</title>
-            </g>
-          );
-        })}
-      </svg>
+                ))}
+              </g>
+            );
+          })}
+          {state.intersections.map((intersection) => {
+            const legalBuild = state.legal.buildableIntersectionIds.includes(intersection.id);
+            const selectable =
+              state.status === "active" && legalBuild;
+            const stackLabel = intersection.cityStack.length
+              ? intersection.cityStack.map((city) => `Lv${city.level}`).join(" / ")
+              : "空";
+            return (
+              <g
+                key={intersection.id}
+                data-testid={`intersection-${intersection.id}`}
+                className={`intersection ${selectable ? "selectable" : ""} ${selectedIntersectionId === intersection.id ? "selected" : ""}`}
+                onClick={() => selectable && onIntersectionSelect(intersection.id)}
+              >
+                {intersection.cityStack.length === 0 ? (
+                  <circle
+                    cx={intersection.x}
+                    cy={intersection.y}
+                    r={legalBuild ? 10 : 7}
+                    fill="#ffffff"
+                  />
+                ) : (
+                  intersection.cityStack.map((city, index) => (
+                    <g key={`${intersection.id}-${city.level}`} transform={`translate(${intersection.x} ${intersection.y - index * 14})`}>
+                      <rect className="city-stack-block" x="-13" y="-8" width="26" height="14" rx="2" fill={city.playerColor} />
+                      <text className="city-stack-text" y="3">
+                        L{city.level}
+                      </text>
+                    </g>
+                  ))
+                )}
+                <title>{intersection.id}: {stackLabel}</title>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
     </section>
   );
 };
