@@ -84,6 +84,19 @@ export type TurnEndProductionPreview = {
   additionalCubes: number;
 };
 
+export type WorldLevelBonusPending = {
+  level: 2 | 3;
+  playerId: string;
+  playerName: string;
+};
+
+export type WorldLevelUnlockSummary = {
+  level: 2 | 3;
+  playerId: string;
+  playerName: string;
+  bonusColor: CubeColor | null;
+};
+
 export type ActionLogEntry = {
   id: number;
   round: number;
@@ -100,6 +113,7 @@ export type LegalInfo = {
   canUseCard: boolean;
   canBuildCity: boolean;
   canEndTurn: boolean;
+  canClaimWorldLevelBonus: boolean;
   draftPack: CardSummary[];
   buildableIntersectionIds: string[];
   placeableAreaIds: string[];
@@ -115,6 +129,10 @@ export type PublicGameState = {
   cityLevel: 1 | 2 | 3;
   areaCapacity: number;
   boardCubeTotal: number;
+  highestContribution: number;
+  nextWorldLevelThreshold: number | null;
+  pendingWorldLevelBonus: WorldLevelBonusPending | null;
+  worldLevelUnlocks: WorldLevelUnlockSummary[];
   currentPlayerId: string | null;
   currentPlayerName: string | null;
   turnCardUsed: boolean;
@@ -155,6 +173,11 @@ export type GameAction =
       type: "END_TURN";
       playerId: string;
       placement?: EndTurnPlacement;
+    }
+  | {
+      type: "CLAIM_WORLD_LEVEL_BONUS";
+      playerId: string;
+      color: CubeColor;
     };
 
 export type GameResponse = {

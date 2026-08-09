@@ -13,6 +13,8 @@ import {
   type ProductionEntry,
   type TurnEndProductionPreview,
   type PublicGameState,
+  type WorldLevelBonusPending,
+  type WorldLevelUnlockSummary,
 } from "@sdb/protocol";
 
 export { cubeColors };
@@ -22,6 +24,10 @@ const cardsPerPlayerPerRound = 8;
 const maxRounds = 3;
 const hexSize = 86;
 const playerColors = ["#d73a31", "#1f6feb", "#2da44e", "#b7791f"];
+const worldLevelThresholds = { 2: 15, 3: 45 } as const;
+
+type WorldLevel = 1 | 2 | 3;
+type UnlockableWorldLevel = 2 | 3;
 
 export type CardDefinition = Omit<CardSummary, "instanceId">;
 
@@ -57,11 +63,25 @@ export type PlayerState = {
   contribution: number;
 };
 
+export type WorldLevelUnlockState = {
+  level: UnlockableWorldLevel;
+  playerId: string;
+  bonusColor: CubeColor | null;
+};
+
+export type PendingWorldLevelBonusState = {
+  level: UnlockableWorldLevel;
+  playerId: string;
+};
+
 export type GameState = {
   status: "active" | "ended";
   phase: GamePhase;
   round: number;
   maxRounds: number;
+  worldLevel: WorldLevel;
+  worldLevelUnlocks: WorldLevelUnlockState[];
+  pendingWorldLevelBonuses: PendingWorldLevelBonusState[];
   currentPlayerIndex: number;
   turnCardUsed: boolean;
   turnEndProductionColor: CubeColor | null;
@@ -153,30 +173,29 @@ export const getAreaColor = (cubes: CubeCounts): AreaColor => {
   return remaining[0]?.count > 0 ? remaining[0].color : "neutral";
 };
 
-export const getWorldLevelFromCubeTotal = (boardCubeTotal: number): 1 | 2 | 3 => {
-  if (boardCubeTotal <= 13) return 1;
-  if (boardCubeTotal <= 27) return 2;
-  return 3;
+export const getWorldLevelFromContribution = (highestContribution: number): WorldLevel => {
+  if (highestContribution >= worldLevelThresholds[3]) return 3;
+  if (highestContribution >= worldLevelThresholds[2]) return 2;
+  return 1;
 };
 
 export const getBoardCubeTotal = (state: GameState): number =>
   state.areas.reduce((total, area) => total + areaTotal(area), 0);
 
-export const getWorldLevel = (state: GameState): 1 | 2 | 3 =>
-  getWorldLevelFromCubeTotal(getBoardCubeTotal(state));
+export const getHighestContribution = (state: GameState): number =>
+  Math.max(...state.players.map((player) => player.contribution));
 
-export const getCityLevel = (state: GameState): 1 | 2 | 3 => getWorldLevel(state);
+export const getWorldLevel = (state: GameState): WorldLevel => state.worldLevel;
 
-export const getPhase = (state: GameState): 1 | 2 | 3 => getWorldLevel(state);
+export const getCityLevel = (state: GameState): WorldLevel => getWorldLevel(state);
 
-const getAreaCapacityForWorldLevel = (worldLevel: 1 | 2 | 3): number => {
+export const getPhase = (state: GameState): WorldLevel => getWorldLevel(state);
+
+const getAreaCapacityForWorldLevel = (worldLevel: WorldLevel): number => {
   if (worldLevel === 1) return 2;
   if (worldLevel === 2) return 4;
   return 6;
 };
-
-const getAreaCapacityForCubeTotal = (boardCubeTotal: number): number =>
-  getAreaCapacityForWorldLevel(getWorldLevelFromCubeTotal(boardCubeTotal));
 
 export const getAreaCapacity = (state: GameState): number =>
   getAreaCapacityForWorldLevel(getWorldLevel(state));
@@ -263,6 +282,9 @@ export const createInitialState = (playerNames: string[]): GameState => {
     phase: "draft",
     round: 1,
     maxRounds,
+    worldLevel: 1,
+    worldLevelUnlocks: [],
+    pendingWorldLevelBonuses: [],
     currentPlayerIndex: 0,
     turnCardUsed: false,
     turnEndProductionColor: null,
@@ -342,6 +364,20 @@ const assertCurrentPlayer = (state: GameState, playerId: string): string | null 
   if (currentPlayer(state).id !== playerId) {
     return "現在手番のプレイヤーだけが操作できます。";
   }
+  return null;
+};
+
+const hasPendingWorldLevelBonus = (state: GameState): boolean =>
+  state.pendingWorldLevelBonuses.length > 0;
+
+const getPendingWorldLevelBonusError = (state: GameState): string | null =>
+  hasPendingWorldLevelBonus(state)
+    ? "世界Lv解禁ボーナスの色選択を完了してください。"
+    : null;
+
+const getNextWorldLevelThreshold = (state: GameState): number | null => {
+  if (state.worldLevel === 1) return worldLevelThresholds[2];
+  if (state.worldLevel === 2) return worldLevelThresholds[3];
   return null;
 };
 
@@ -467,6 +503,24 @@ const scoreForCard = (state: GameState, playerId: string, type: CardType): numbe
   }, 0);
 };
 
+const unlockWorldLevelsAfterScore = (state: GameState, playerId: string): void => {
+  const targetWorldLevel = getWorldLevelFromContribution(getHighestContribution(state));
+  for (const level of [2, 3] as const) {
+    const alreadyUnlocked = state.worldLevelUnlocks.some((unlock) => unlock.level === level);
+    if (level > state.worldLevel && level <= targetWorldLevel && !alreadyUnlocked) {
+      state.worldLevelUnlocks.push({ level, playerId, bonusColor: null });
+      state.pendingWorldLevelBonuses.push({ level, playerId });
+      addHistory(
+        state,
+        "USE_CARD",
+        playerId,
+        `世界Lv${level}を解禁。ボーナス色を選択してください`
+      );
+    }
+  }
+  state.worldLevel = targetWorldLevel;
+};
+
 const validateEndTurnPlacement = (
   state: GameState,
   player: PlayerState,
@@ -479,7 +533,7 @@ const validateEndTurnPlacement = (
   }
   const area = getArea(state, placement.areaId);
   if (!area) return "存在しないエリアです。";
-  const capacity = getAreaCapacityForCubeTotal(getBoardCubeTotal(state) + 1);
+  const capacity = getAreaCapacity(state);
   if (areaTotal(area) + 1 > capacity) {
     return "現在のエリア容量を超えています。";
   }
@@ -507,6 +561,8 @@ const applyDraftPick = (
   action: Extract<GameAction, { type: "DRAFT_PICK" }>
 ): ActionResult => {
   if (state.phase !== "draft") return reject(state, "現在はドラフトフェーズではありません。");
+  const pendingError = getPendingWorldLevelBonusError(state);
+  if (pendingError) return reject(state, pendingError);
   const headerError = assertCurrentPlayer(state, action.playerId);
   if (headerError) return reject(state, headerError);
 
@@ -547,6 +603,8 @@ const applyBuildCity = (
   action: Extract<GameAction, { type: "BUILD_CITY" }>
 ): ActionResult => {
   if (state.phase !== "action") return reject(state, "都市建設はアクションフェーズ中だけ実行できます。");
+  const pendingError = getPendingWorldLevelBonusError(state);
+  if (pendingError) return reject(state, pendingError);
   const headerError = assertCurrentPlayer(state, action.playerId);
   if (headerError) return reject(state, headerError);
 
@@ -588,6 +646,8 @@ const applyUseCard = (
   action: Extract<GameAction, { type: "USE_CARD" }>
 ): ActionResult => {
   if (state.phase !== "action") return reject(state, "現在はアクションフェーズではありません。");
+  const pendingError = getPendingWorldLevelBonusError(state);
+  if (pendingError) return reject(state, pendingError);
   const headerError = assertCurrentPlayer(state, action.playerId);
   if (headerError) return reject(state, headerError);
   if (state.turnCardUsed) {
@@ -622,6 +682,7 @@ const applyUseCard = (
     const nextPlayer = currentPlayer(next);
     const usedCard = removeCard(nextPlayer, action.cardInstanceId);
     nextPlayer.contribution += gained;
+    unlockWorldLevelsAfterScore(next, action.playerId);
     addHistory(next, action.type, action.playerId, `${cardDefinitions[usedCard.type].name}で${gained}貢献度を獲得`);
     next.turnCardUsed = true;
     return { ok: true, state: next };
@@ -652,6 +713,8 @@ const applyEndTurn = (
   action: Extract<GameAction, { type: "END_TURN" }>
 ): ActionResult => {
   if (state.phase !== "action") return reject(state, "現在はアクションフェーズではありません。");
+  const pendingError = getPendingWorldLevelBonusError(state);
+  if (pendingError) return reject(state, pendingError);
   const headerError = assertCurrentPlayer(state, action.playerId);
   if (headerError) return reject(state, headerError);
   if (!state.turnCardUsed) {
@@ -690,8 +753,41 @@ const applyEndTurn = (
   return { ok: true, state: next };
 };
 
+const applyClaimWorldLevelBonus = (
+  state: GameState,
+  action: Extract<GameAction, { type: "CLAIM_WORLD_LEVEL_BONUS" }>
+): ActionResult => {
+  if (state.phase !== "action") return reject(state, "現在はアクションフェーズではありません。");
+  const headerError = assertCurrentPlayer(state, action.playerId);
+  if (headerError) return reject(state, headerError);
+  if (!cubeColors.includes(action.color)) return reject(state, "存在しない色です。");
+  const pending = state.pendingWorldLevelBonuses[0];
+  if (!pending) return reject(state, "未解決の世界Lv解禁ボーナスはありません。");
+  if (pending.playerId !== action.playerId) {
+    return reject(state, "世界Lv解禁者だけがボーナスを取得できます。");
+  }
+
+  const next = cloneState(state);
+  const nextPending = next.pendingWorldLevelBonuses.shift();
+  if (!nextPending) return reject(state, "未解決の世界Lv解禁ボーナスはありません。");
+  const unlock = next.worldLevelUnlocks.find((candidate) => candidate.level === nextPending.level);
+  if (!unlock || unlock.playerId !== action.playerId || unlock.bonusColor !== null) {
+    return reject(state, "世界Lv解禁ボーナスの状態が不正です。");
+  }
+  unlock.bonusColor = action.color;
+  currentPlayer(next).cubes[action.color] += 1;
+  addHistory(
+    next,
+    action.type,
+    action.playerId,
+    `世界Lv${nextPending.level}解禁ボーナスで${action.color}:1を取得`
+  );
+  return { ok: true, state: next };
+};
+
 export const applyAction = (state: GameState, action: GameAction): ActionResult => {
   if (state.status === "ended") return reject(state, "ゲーム終了後は操作できません。");
+  if (action.type === "CLAIM_WORLD_LEVEL_BONUS") return applyClaimWorldLevelBonus(state, action);
   if (action.type === "DRAFT_PICK") return applyDraftPick(state, action);
   if (action.type === "USE_CARD") return applyUseCard(state, action);
   if (action.type === "BUILD_CITY") return applyBuildCity(state, action);
@@ -713,6 +809,7 @@ export const getLegalInfo = (state: GameState, canUndo = false): LegalInfo => {
       canUseCard: false,
       canBuildCity: false,
       canEndTurn: false,
+      canClaimWorldLevelBonus: false,
       draftPack: [],
       buildableIntersectionIds: [],
       placeableAreaIds: [],
@@ -721,14 +818,15 @@ export const getLegalInfo = (state: GameState, canUndo = false): LegalInfo => {
   }
 
   const player = currentPlayer(state);
-  const turnEndAreaCapacity = getAreaCapacityForCubeTotal(getBoardCubeTotal(state) + 1);
-  const placeableAreaIds = state.phase === "action" && state.turnCardUsed
+  const pendingBonus = hasPendingWorldLevelBonus(state);
+  const turnEndAreaCapacity = getAreaCapacity(state);
+  const placeableAreaIds = state.phase === "action" && state.turnCardUsed && !pendingBonus
     ? state.areas
         .filter((area) => areaTotal(area) + 1 <= turnEndAreaCapacity)
         .map((area) => area.id)
     : [];
   const maxCityLevel = getCityLevel(state);
-  const buildableIntersectionIds = state.phase === "action"
+  const buildableIntersectionIds = state.phase === "action" && !pendingBonus
     ? state.intersections
         .filter((intersection) => {
           if (intersection.cityStack.length >= 3) return false;
@@ -742,11 +840,13 @@ export const getLegalInfo = (state: GameState, canUndo = false): LegalInfo => {
 
   return {
     canUndo,
-    canDraft: state.phase === "draft",
-    canUseCard: state.phase === "action" && player.handCards.length > 0 && !state.turnCardUsed,
+    canDraft: state.phase === "draft" && !pendingBonus,
+    canUseCard: state.phase === "action" && player.handCards.length > 0 && !state.turnCardUsed && !pendingBonus,
     canBuildCity: buildableIntersectionIds.length > 0,
-    canEndTurn: state.phase === "action" && state.turnCardUsed,
-    draftPack: state.phase === "draft"
+    canEndTurn: state.phase === "action" && state.turnCardUsed && !pendingBonus,
+    canClaimWorldLevelBonus:
+      state.phase === "action" && state.pendingWorldLevelBonuses[0]?.playerId === player.id,
+    draftPack: state.phase === "draft" && !pendingBonus
       ? (state.draftPacks[state.currentPlayerIndex] ?? []).map(summarizeCard)
       : [],
     buildableIntersectionIds,
@@ -777,6 +877,21 @@ export const toPublicState = (state: GameState, canUndo = false): PublicGameStat
     ? players.filter((player) => player.finalScore === maxScore)
     : [];
   const activePlayer = state.status === "active" ? currentPlayer(state) : null;
+  const pendingBonus = state.pendingWorldLevelBonuses[0] ?? null;
+  const pendingWorldLevelBonus: WorldLevelBonusPending | null = pendingBonus
+    ? {
+        level: pendingBonus.level,
+        playerId: pendingBonus.playerId,
+        playerName:
+          state.players.find((player) => player.id === pendingBonus.playerId)?.name ?? "Unknown",
+      }
+    : null;
+  const worldLevelUnlocks: WorldLevelUnlockSummary[] = state.worldLevelUnlocks.map((unlock) => ({
+    level: unlock.level,
+    playerId: unlock.playerId,
+    playerName: state.players.find((player) => player.id === unlock.playerId)?.name ?? "Unknown",
+    bonusColor: unlock.bonusColor,
+  }));
 
   return {
     status: state.status,
@@ -787,6 +902,10 @@ export const toPublicState = (state: GameState, canUndo = false): PublicGameStat
     cityLevel: worldLevel,
     areaCapacity,
     boardCubeTotal: getBoardCubeTotal(state),
+    highestContribution: getHighestContribution(state),
+    nextWorldLevelThreshold: getNextWorldLevelThreshold(state),
+    pendingWorldLevelBonus,
+    worldLevelUnlocks,
     currentPlayerId: activePlayer?.id ?? null,
     currentPlayerName: activePlayer?.name ?? null,
     turnCardUsed: state.turnCardUsed,

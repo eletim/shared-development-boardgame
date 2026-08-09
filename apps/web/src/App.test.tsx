@@ -25,6 +25,10 @@ const baseState = (
   cityLevel: 1,
   areaCapacity: 2,
   boardCubeTotal: 0,
+  highestContribution: 0,
+  nextWorldLevelThreshold: 15,
+  pendingWorldLevelBonus: null,
+  worldLevelUnlocks: [],
   currentPlayerId: "player-1",
   currentPlayerName: "A",
   turnCardUsed,
@@ -89,6 +93,7 @@ const baseState = (
     canUseCard: phase === "action" && !turnCardUsed,
     canBuildCity: phase === "action",
     canEndTurn: phase === "action" && turnCardUsed,
+    canClaimWorldLevelBonus: false,
     draftPack: phase === "draft" ? [card("draft-1")] : [],
     buildableIntersectionIds: phase === "action" ? ["intersection-01"] : [],
     placeableAreaIds: phase === "action" && turnCardUsed ? ["area-center"] : [],
@@ -195,6 +200,43 @@ describe("App", () => {
     mockFetch([baseState("action", true)]);
     render(<App />);
     expect(await screen.findByText("追加生産見込み: 赤 2")).toBeInTheDocument();
+  });
+
+  it("shows world level progress and sends unlock bonus choices", async () => {
+    const unlocked = baseState("action", true);
+    unlocked.worldLevel = 2;
+    unlocked.areaCapacity = 4;
+    unlocked.highestContribution = 15;
+    unlocked.nextWorldLevelThreshold = 45;
+    unlocked.pendingWorldLevelBonus = {
+      level: 2,
+      playerId: "player-1",
+      playerName: "A",
+    };
+    unlocked.worldLevelUnlocks = [{
+      level: 2,
+      playerId: "player-1",
+      playerName: "A",
+      bonusColor: null,
+    }];
+    unlocked.legal.canClaimWorldLevelBonus = true;
+    unlocked.legal.canBuildCity = false;
+    unlocked.legal.canEndTurn = false;
+    unlocked.legal.buildableIntersectionIds = [];
+    unlocked.legal.placeableAreaIds = [];
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: unlocked }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText(/世界Lv2 \/ 次の解禁: 45点 \/ 現在最高: 15点/)).toBeInTheDocument();
+    expect(screen.getByText("世界Lv2を解禁しました")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "青" }));
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("CLAIM_WORLD_LEVEL_BONUS");
+    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("blue");
   });
 
   it("only enables turn-end placement areas that fit the next capacity", async () => {

@@ -129,6 +129,20 @@ describe("server API", () => {
     expect(invalid.json().state.currentPlayerId).toBe("player-1");
   });
 
+  it("parses world level bonus claim actions before rule validation", async () => {
+    await post("/api/game/start", { playerNames: ["A", "B"] });
+    await draftAll();
+    const response = await post("/api/game/actions", {
+      action: {
+        type: "CLAIM_WORLD_LEVEL_BONUS",
+        playerId: "player-1",
+        color: "blue",
+      },
+    });
+    expect(response.statusCode).toBe(400);
+    expect(response.json().error).toContain("未解決");
+  });
+
   it("supports reset and undo", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
     const state = await getState();

@@ -8,8 +8,8 @@ import {
   getAreaColor,
   getBoardCubeTotal,
   getCityLevel,
+  getWorldLevelFromContribution,
   getWorldLevel,
-  getWorldLevelFromCubeTotal,
   toPublicState,
   type CardInstance,
   type GameState,
@@ -29,6 +29,9 @@ const endTurn = (
   placement?: Extract<GameAction, { type: "END_TURN" }>["placement"]
 ): GameState =>
   play(state, { type: "END_TURN", playerId: currentId(state), placement });
+
+const claimBonus = (state: GameState, color: CubeColor): GameState =>
+  play(state, { type: "CLAIM_WORLD_LEVEL_BONUS", playerId: currentId(state), color });
 
 const draftAll = (state: GameState): GameState => {
   let next = state;
@@ -67,6 +70,29 @@ const emptyIntersectionIds = (state: GameState, count: number): string[] =>
     .slice(0, count)
     .map((intersection) => intersection.id);
 
+const prepareOnePointScoringCard = (
+  state: GameState,
+  playerId = currentId(state),
+  cardId = "score-red"
+): string => {
+  const player = state.players.find((candidate) => candidate.id === playerId);
+  if (!player) throw new Error(playerId);
+  const intersection = state.intersections.find(
+    (candidate) =>
+      candidate.adjacentAreaIds.includes("area-center") &&
+      candidate.cityStack.length === 0
+  ) ?? state.intersections.find((candidate) =>
+    candidate.adjacentAreaIds.includes("area-center")
+  );
+  if (!intersection) throw new Error("area-center intersection");
+  if (!intersection.cityStack.some((city) => city.playerId === playerId)) {
+    intersection.cityStack = [{ playerId }];
+  }
+  addBoardCubes(state, "area-center", { red: 1 });
+  player.handCards = [{ instanceId: cardId, type: "red-production" }];
+  return cardId;
+};
+
 describe("board definition", () => {
   it("generates seven areas and shared intersections", () => {
     const board = createBoardDefinition();
@@ -91,24 +117,24 @@ describe("area color and world level", () => {
     expect(getAreaColor(cubes)).toBe(color);
   });
 
-  it("derives world level, area capacity, and city level from board cube total", () => {
-    expect(getWorldLevelFromCubeTotal(0)).toBe(1);
-    expect(getWorldLevelFromCubeTotal(13)).toBe(1);
-    expect(getWorldLevelFromCubeTotal(14)).toBe(2);
-    expect(getWorldLevelFromCubeTotal(27)).toBe(2);
-    expect(getWorldLevelFromCubeTotal(28)).toBe(3);
+  it("derives world level thresholds from highest contribution", () => {
+    expect(getWorldLevelFromContribution(0)).toBe(1);
+    expect(getWorldLevelFromContribution(14)).toBe(1);
+    expect(getWorldLevelFromContribution(15)).toBe(2);
+    expect(getWorldLevelFromContribution(44)).toBe(2);
+    expect(getWorldLevelFromContribution(45)).toBe(3);
 
     const state = createInitialState(["A", "B"]);
     expect(getWorldLevel(state)).toBe(1);
     expect(getAreaCapacity(state)).toBe(2);
     expect(getCityLevel(state)).toBe(1);
-    addBoardCubes(state, "area-center", { red: 14 });
-    expect(getBoardCubeTotal(state)).toBe(14);
+    state.players[0].contribution = 14;
+    expect(getWorldLevel(state)).toBe(1);
+    state.worldLevel = getWorldLevelFromContribution(15);
     expect(getWorldLevel(state)).toBe(2);
     expect(getAreaCapacity(state)).toBe(4);
     expect(getCityLevel(state)).toBe(2);
-    addBoardCubes(state, "area-east", { blue: 14 });
-    expect(getBoardCubeTotal(state)).toBe(28);
+    state.worldLevel = getWorldLevelFromContribution(45);
     expect(getWorldLevel(state)).toBe(3);
     expect(getAreaCapacity(state)).toBe(6);
     expect(getCityLevel(state)).toBe(3);
@@ -126,14 +152,257 @@ describe("area color and world level", () => {
     expect(getAreaLevel(cubes)).toBe(level);
   });
 
-  it("keeps neutral areas developed and counts them toward world level", () => {
+  it("keeps neutral areas developed without counting board cubes toward world level", () => {
     const state = createInitialState(["A", "B"]);
     addBoardCubes(state, "area-center", { red: 2, blue: 2 });
     expect(getAreaColor(state.areas.find((area) => area.id === "area-center")!.cubes)).toBe("neutral");
     expect(getAreaLevel(state.areas.find((area) => area.id === "area-center")!.cubes)).toBe(2);
-    addBoardCubes(state, "area-east", { yellow: 10 });
-    expect(getBoardCubeTotal(state)).toBe(14);
+    addBoardCubes(state, "area-east", { yellow: 50 });
+    expect(getBoardCubeTotal(state)).toBe(54);
+    expect(getWorldLevel(state)).toBe(1);
+    expect(getAreaCapacity(state)).toBe(2);
+  });
+});
+
+describe("score-based world level unlocks", () => {
+  it("stays at Lv1 on 14 points and unlocks Lv2 immediately at 15 points", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].contribution = 14;
+    const cardId = prepareOnePointScoringCard(state);
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+
+    expect(state.players[0].contribution).toBe(15);
     expect(getWorldLevel(state)).toBe(2);
+    expect(getAreaCapacity(state)).toBe(4);
+    expect(getCityLevel(state)).toBe(2);
+    expect(state.pendingWorldLevelBonuses).toEqual([{ level: 2, playerId: "player-1" }]);
+    expect(state.currentPlayerIndex).toBe(0);
+    expect(state.turnCardUsed).toBe(true);
+  });
+
+  it("stays at Lv2 on 44 points and unlocks Lv3 immediately at 45 points", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.worldLevel = 2;
+    state.worldLevelUnlocks = [{ level: 2, playerId: "player-1", bonusColor: "red" }];
+    state.players[0].contribution = 44;
+    const cardId = prepareOnePointScoringCard(state);
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+
+    expect(state.players[0].contribution).toBe(45);
+    expect(getWorldLevel(state)).toBe(3);
+    expect(getAreaCapacity(state)).toBe(6);
+    expect(getCityLevel(state)).toBe(3);
+    expect(state.pendingWorldLevelBonuses).toEqual([{ level: 3, playerId: "player-1" }]);
+    expect(state.worldLevelUnlocks.filter((unlock) => unlock.level === 3)).toHaveLength(1);
+  });
+
+  it("only gives the unlock bonus to the unlocking player once per world level", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].contribution = 14;
+    const cardId = prepareOnePointScoringCard(state);
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+
+    const blockedEndTurn = applyAction(state, { type: "END_TURN", playerId: "player-1" });
+    expect(blockedEndTurn.ok).toBe(false);
+    const blockedBuild = applyAction(state, {
+      type: "BUILD_CITY",
+      playerId: "player-1",
+      intersectionId: state.intersections[1].id,
+    });
+    expect(blockedBuild.ok).toBe(false);
+
+    state = claimBonus(state, "blue");
+    expect(state.players[0].cubes.blue).toBe(1);
+    expect(state.players[1].cubes.blue).toBe(0);
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(state.currentPlayerIndex).toBe(0);
+    expect(state.turnCardUsed).toBe(true);
+
+    state = endTurn(state);
+    state.currentPlayerIndex = 1;
+    state.turnCardUsed = false;
+    state.players[1].contribution = 14;
+    const otherCardId = prepareOnePointScoringCard(state, "player-2", "p2-score-red");
+    const beforeCubes = { ...state.players[1].cubes };
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-2",
+      cardInstanceId: otherCardId,
+      mode: "scoring",
+    });
+    expect(state.players[1].contribution).toBe(15);
+    expect(getWorldLevel(state)).toBe(2);
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(state.players[1].cubes).toEqual(beforeCubes);
+    expect(state.worldLevelUnlocks.filter((unlock) => unlock.level === 2)).toHaveLength(1);
+  });
+
+  it("lets the unlocking player use the new city level and area capacity in the same turn", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const cityId = state.intersections.find((intersection) =>
+      intersection.adjacentAreaIds.includes("area-center")
+    )!.id;
+    state.intersections.find((intersection) => intersection.id === cityId)!.cityStack = [
+      { playerId: "player-1" },
+    ];
+    state.players[0].cubes = { red: 2, blue: 2, yellow: 2 };
+    state.players[0].contribution = 14;
+    addBoardCubes(state, "area-east", { blue: 2 });
+    const cardId = prepareOnePointScoringCard(state);
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+    state = claimBonus(state, "red");
+
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(toPublicState(state).intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1", playerColor: "#d73a31", level: 1 },
+      { playerId: "player-1", playerColor: "#d73a31", level: 2 },
+    ]);
+    state = endTurn(state, { areaId: "area-east", color: "red" });
+    expect(state.areas.find((area) => area.id === "area-east")?.cubes).toEqual({
+      red: 1,
+      blue: 2,
+      yellow: 0,
+    });
+    expect(state.currentPlayerIndex).toBe(1);
+  });
+
+  it("lets Lv3 unlock enable Lv3 city builds and capacity 6 without auto-upgrading old cities", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.worldLevel = 2;
+    state.worldLevelUnlocks = [{ level: 2, playerId: "player-1", bonusColor: "red" }];
+    const cityId = state.intersections.find((intersection) =>
+      intersection.adjacentAreaIds.includes("area-center")
+    )!.id;
+    state.intersections.find((intersection) => intersection.id === cityId)!.cityStack = [
+      { playerId: "player-1" },
+      { playerId: "player-1" },
+    ];
+    state.players[0].cubes = { red: 3, blue: 3, yellow: 3 };
+    state.players[0].contribution = 44;
+    addBoardCubes(state, "area-east", { blue: 4 });
+    const cardId = prepareOnePointScoringCard(state);
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+    state = claimBonus(state, "yellow");
+
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(toPublicState(state).intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1", playerColor: "#d73a31", level: 1 },
+      { playerId: "player-1", playerColor: "#d73a31", level: 2 },
+      { playerId: "player-1", playerColor: "#d73a31", level: 3 },
+    ]);
+    state = endTurn(state, { areaId: "area-east", color: "yellow" });
+    expect(state.areas.find((area) => area.id === "area-east")?.cubes).toEqual({
+      red: 0,
+      blue: 4,
+      yellow: 1,
+    });
+    expect(getAreaCapacity(state)).toBe(6);
+  });
+
+  it("queues both Lv2 and Lv3 bonuses when one scoring action reaches 45 from Lv1", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].contribution = 44;
+    const cardId = prepareOnePointScoringCard(state);
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+
+    expect(getWorldLevel(state)).toBe(3);
+    expect(state.worldLevelUnlocks).toEqual([
+      { level: 2, playerId: "player-1", bonusColor: null },
+      { level: 3, playerId: "player-1", bonusColor: null },
+    ]);
+    expect(state.pendingWorldLevelBonuses).toEqual([
+      { level: 2, playerId: "player-1" },
+      { level: 3, playerId: "player-1" },
+    ]);
+
+    state = claimBonus(state, "red");
+    expect(state.pendingWorldLevelBonuses).toEqual([{ level: 3, playerId: "player-1" }]);
+    state = claimBonus(state, "yellow");
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(state.worldLevelUnlocks).toEqual([
+      { level: 2, playerId: "player-1", bonusColor: "red" },
+      { level: 3, playerId: "player-1", bonusColor: "yellow" },
+    ]);
+  });
+
+  it("restores score, world level, pending bonus, bonus cubes, and turn state from undo snapshots", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].contribution = 14;
+    const cardId = prepareOnePointScoringCard(state);
+    const undoStack: GameState[] = [];
+    const dispatch = (action: GameAction) => {
+      const before = structuredClone(state) as GameState;
+      const result = applyAction(state, action);
+      if (!result.ok) throw new Error(result.error);
+      undoStack.push(before);
+      state = result.state;
+    };
+
+    dispatch({
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+    dispatch({ type: "CLAIM_WORLD_LEVEL_BONUS", playerId: "player-1", color: "blue" });
+
+    expect(state.players[0].contribution).toBe(15);
+    expect(state.players[0].cubes.blue).toBe(1);
+    expect(state.worldLevel).toBe(2);
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(state.turnCardUsed).toBe(true);
+
+    state = undoStack.pop()!;
+    expect(state.players[0].contribution).toBe(15);
+    expect(state.players[0].cubes.blue).toBe(0);
+    expect(state.worldLevel).toBe(2);
+    expect(state.pendingWorldLevelBonuses).toEqual([{ level: 2, playerId: "player-1" }]);
+    expect(state.turnCardUsed).toBe(true);
+    expect(state.currentPlayerIndex).toBe(0);
+
+    state = undoStack.pop()!;
+    expect(state.players[0].contribution).toBe(14);
+    expect(state.players[0].cubes.blue).toBe(0);
+    expect(state.worldLevel).toBe(1);
+    expect(state.worldLevelUnlocks).toHaveLength(0);
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(state.turnCardUsed).toBe(false);
+    expect(state.currentPlayerIndex).toBe(0);
   });
 });
 
@@ -312,8 +581,10 @@ describe("draft and card turns", () => {
     expect(state.players[0].cubes.red).toBe(2);
   });
 
-  it("places one cube at turn end and updates area color and world level", () => {
+  it("places one cube at turn end and updates area color under the current world level capacity", () => {
     let state = draftAll(createInitialState(["A", "B"]));
+    state.worldLevel = 2;
+    state.worldLevelUnlocks = [{ level: 2, playerId: "player-1", bonusColor: "red" }];
     addBoardCubes(state, "area-center", { red: 2 });
     addBoardCubes(state, "area-east", { blue: 2 });
     addBoardCubes(state, "area-northeast", { yellow: 2 });
@@ -321,7 +592,7 @@ describe("draft and card turns", () => {
     addBoardCubes(state, "area-southeast", { yellow: 4 });
     addBoardCubes(state, "area-west", { blue: 1 });
     expect(getBoardCubeTotal(state)).toBe(13);
-    expect(getAreaCapacity(state)).toBe(2);
+    expect(getAreaCapacity(state)).toBe(4);
 
     state.players[0].cubes.red = 1;
     const card = state.players[0].handCards[0];
@@ -541,6 +812,8 @@ describe("city rules and production", () => {
     ]);
 
     addBoardCubes(state, "area-center", { red: 14 });
+    state.worldLevel = 2;
+    state.worldLevelUnlocks = [{ level: 2, playerId: "player-1", bonusColor: "red" }];
     state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
     expect(state.players[0].cubes).toEqual({ red: 0, blue: 0, yellow: 0 });
     expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
@@ -561,6 +834,8 @@ describe("city rules and production", () => {
     rejected = applyAction(state, { type: "BUILD_CITY", playerId: "player-2", intersectionId: cityId });
     expect(rejected.ok).toBe(false);
     addBoardCubes(state, "area-east", { blue: 14 });
+    state.worldLevel = 3;
+    state.worldLevelUnlocks.push({ level: 3, playerId: "player-2", bonusColor: "blue" });
     state = play(state, { type: "BUILD_CITY", playerId: "player-2", intersectionId: cityId });
     expect(state.players[1].cubes).toEqual({ red: 0, blue: 0, yellow: 0 });
     expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
@@ -575,7 +850,11 @@ describe("city rules and production", () => {
     const cityId = state.intersections.find((intersection) => intersection.adjacentAreaIds.includes("area-center"))!.id;
     state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
     state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
-    addBoardCubes(state, "area-center", { red: 28 });
+    state.worldLevel = 3;
+    state.worldLevelUnlocks = [
+      { level: 2, playerId: "player-1", bonusColor: "red" },
+      { level: 3, playerId: "player-1", bonusColor: "blue" },
+    ];
 
     const publicState = toPublicState(state);
     expect(publicState.worldLevel).toBe(3);
@@ -597,7 +876,7 @@ describe("city rules and production", () => {
     addBoardCubes(state, blueArea, { blue: 5 });
     addBoardCubes(state, neutralArea, { red: 1, blue: 1 });
     addBoardCubes(state, "area-east", { yellow: 3 });
-    expect(getWorldLevel(state)).toBe(2);
+    expect(getWorldLevel(state)).toBe(1);
 
     state.players[0].handCards = [{ instanceId: "p1-final", type: "red-production" }];
     state.players[1].handCards = [{ instanceId: "p2-final", type: "blue-production" }];
