@@ -88,6 +88,15 @@ importers:
         specifier: workspace:*
         version: link:../protocol
 
+  packages/simulation:
+    dependencies:
+      '@sdb/game-core':
+        specifier: workspace:*
+        version: link:../game-core
+      '@sdb/protocol':
+        specifier: workspace:*
+        version: link:../protocol
+
   packages/protocol: {}
 
 packages:
