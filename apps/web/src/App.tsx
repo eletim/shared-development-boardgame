@@ -46,17 +46,6 @@ const formatCubes = (cubes: PartialCubeCounts): string =>
 
 const emptyCubeCounts = (): Record<CubeColor, number> => ({ red: 0, blue: 0, yellow: 0 });
 
-const getAreaColorFromCounts = (cubes: Record<CubeColor, number>): AreaColor => {
-  const counts = cubeColors.map((color) => ({ color, count: cubes[color] }));
-  const max = Math.max(...counts.map((entry) => entry.count));
-  const maxColors = counts.filter((entry) => entry.count === max);
-  if (max === 0 || maxColors.length === 3) return "neutral";
-  if (maxColors.length === 1) return maxColors[0].color;
-
-  const remaining = counts.filter((entry) => entry.count !== max);
-  return remaining[0]?.count > 0 ? remaining[0].color : "neutral";
-};
-
 export const App = () => {
   const [state, setState] = useState<PublicGameState | null>(null);
   const [error, setError] = useState<string>("");
@@ -130,14 +119,8 @@ export const App = () => {
   const turnEndDevelopment = state?.turnEndDevelopment ?? null;
   const selectedNeutralDevelopmentArea =
     state?.areas.find((area) => area.id === neutralDevelopmentAreaId) ?? null;
-  const plannedNeutralCubes = selectedNeutralDevelopmentArea
-    ? { ...selectedNeutralDevelopmentArea.cubes }
-    : emptyCubeCounts();
-  if (neutralPlacementCount >= 1) plannedNeutralCubes[neutralFirstColor] += 1;
-  if (neutralPlacementCount >= 2) plannedNeutralCubes[neutralSecondColor] += 1;
-  const plannedNeutralAreaColor = getAreaColorFromCounts(plannedNeutralCubes);
   const neutralAdjacentCityPieces =
-    state && selectedNeutralDevelopmentArea && plannedNeutralAreaColor === "neutral"
+    state && selectedNeutralDevelopmentArea
       ? state.intersections
           .filter((intersection) => intersection.adjacentAreaIds.includes(selectedNeutralDevelopmentArea.id))
           .reduce((total, intersection) => total + intersection.cityStack.length, 0)
@@ -163,7 +146,7 @@ export const App = () => {
     selectedNeutralDevelopmentArea !== null &&
     selectedNeutralDevelopmentArea.cubeTotal + neutralPlacementCount <= endPlacementCapacity &&
     cubeColors.every((color) => (currentPlayer?.cubes[color] ?? 0) >= neutralRequiredCubes[color]) &&
-    neutralBonusTotal === neutralAdjacentCityPieces;
+    neutralBonusTotal <= neutralAdjacentCityPieces;
   const worldLevelStatus = state
     ? `世界Lv${state.worldLevel} / 次の解禁: ${
         state.nextWorldLevelThreshold ? `${state.nextWorldLevelThreshold}点` : "なし"
@@ -428,6 +411,45 @@ export const App = () => {
           ) : null}
 
           {state.phase === "action" ? (
+            !state.pendingWorldLevelBonus ? (
+              <section className="actions city-build-actions">
+                <h2>都市建設</h2>
+                <label>
+                  交点
+                  <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
+                    <option value="">選択</option>
+                    {state.intersections
+                      .map((intersection) => (
+                        <option
+                          key={intersection.id}
+                          value={intersection.id}
+                          disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
+                        >
+                          {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
+                          {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
+                        </option>
+                      ))}
+                  </select>
+                </label>
+                <p className="hint">
+                  コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+                </p>
+                <button
+                  className="primary wide"
+                  onClick={confirmBuild}
+                  disabled={
+                    !state.legal.canBuildCity ||
+                    !buildIntersectionId ||
+                    !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
+                  }
+                >
+                  都市を建設
+                </button>
+              </section>
+            ) : null
+          ) : null}
+
+          {state.phase === "action" ? (
             <section className="actions">
               <h2>カード手番</h2>
               {state.turnCardUsed ? (
@@ -659,7 +681,8 @@ export const App = () => {
                 </label>
               ) : null}
               <p className="hint">
-                開発後見込み: {areaColorLabels[plannedNeutralAreaColor]} / 任意色取得 {neutralAdjacentCityPieces}個
+                現在色: {selectedNeutralDevelopmentArea ? areaColorLabels[selectedNeutralDevelopmentArea.areaColor] : "未選択"} /
+                中立で解決される場合の任意色取得上限 {neutralAdjacentCityPieces}個
               </p>
               {neutralAdjacentCityPieces > 0 ? (
                 <div className="payment-grid">
@@ -679,43 +702,6 @@ export const App = () => {
               ) : null}
               <button className="primary wide" onClick={endNeutralDevelopmentTurn} disabled={!state.legal.canEndTurn || !neutralCanPlace}>
                 中立開発を解決して手番終了
-              </button>
-            </section>
-          ) : null}
-
-          {state.phase === "action" && !state.pendingWorldLevelBonus ? (
-            <section className="actions">
-              <h2>都市建設</h2>
-              <label>
-                交点
-                <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
-                  <option value="">選択</option>
-                  {state.intersections
-                    .map((intersection) => (
-                      <option
-                        key={intersection.id}
-                        value={intersection.id}
-                        disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
-                      >
-                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
-                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="hint">
-                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
-              </p>
-              <button
-                className="primary wide"
-                onClick={confirmBuild}
-                disabled={
-                  !state.legal.canBuildCity ||
-                  !buildIntersectionId ||
-                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
-                }
-              >
-                都市を建設
               </button>
             </section>
           ) : null}
@@ -804,6 +790,7 @@ const Board = ({
             <g key={area.id}>
               <polygon
                 points={points}
+                data-testid={`area-${area.id}`}
                 className={`hex ${area.areaColor} ${selectable ? "selectable" : ""} ${selectedAreaId === area.id ? "selected" : ""}`}
                 onClick={() => selectable && onAreaSelect(area.id)}
               />
