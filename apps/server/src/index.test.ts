@@ -129,6 +129,68 @@ describe("server API", () => {
     expect(invalid.json().state.currentPlayerId).toBe("player-1");
   });
 
+  it("accepts special development turn-end payloads", async () => {
+    await post("/api/game/start", { playerNames: ["A", "B"] });
+    const actionState = await draftAll();
+    const card = actionState.players[0].handCards.find((candidate: any) => candidate.type === "tricolor-city");
+    expect(card).toBeTruthy();
+    await post("/api/game/actions", {
+      action: {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: card.instanceId,
+        mode: "production",
+      },
+    });
+    const ended = await post("/api/game/actions", {
+      action: {
+        type: "END_TURN",
+        playerId: "player-1",
+        placements: [],
+      },
+    });
+    expect(ended.statusCode).toBe(200);
+    expect(ended.json().state.currentPlayerId).toBe("player-2");
+    expect(ended.json().state.boardCubeTotal).toBe(0);
+  });
+
+  it("undoes special development end turn and card use snapshots", async () => {
+    await post("/api/game/start", { playerNames: ["A", "B"] });
+    const actionState = await draftAll();
+    const card = actionState.players[0].handCards.find((candidate: any) => candidate.type === "tricolor-city");
+    expect(card).toBeTruthy();
+    await post("/api/game/actions", {
+      action: {
+        type: "USE_CARD",
+        playerId: "player-1",
+        cardInstanceId: card.instanceId,
+        mode: "production",
+      },
+    });
+    await post("/api/game/actions", {
+      action: {
+        type: "END_TURN",
+        playerId: "player-1",
+        placements: [],
+      },
+    });
+
+    const undoneEnd = await post("/api/game/undo");
+    expect(undoneEnd.statusCode).toBe(200);
+    expect(undoneEnd.json().state.currentPlayerId).toBe("player-1");
+    expect(undoneEnd.json().state.turnCardUsed).toBe(true);
+    expect(undoneEnd.json().state.turnEndDevelopment).toEqual({
+      type: "tricolor-city",
+      maxPlacements: 2,
+      placementRule: "distinct-areas",
+    });
+
+    const undoneUse = await post("/api/game/undo");
+    expect(undoneUse.statusCode).toBe(200);
+    expect(undoneUse.json().state.turnCardUsed).toBe(false);
+    expect(undoneUse.json().state.players[0].handCards.some((candidate: any) => candidate.instanceId === card.instanceId)).toBe(true);
+  });
+
   it("parses world level bonus claim actions before rule validation", async () => {
     await post("/api/game/start", { playerNames: ["A", "B"] });
     await draftAll();

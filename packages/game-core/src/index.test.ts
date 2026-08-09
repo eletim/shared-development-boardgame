@@ -750,6 +750,282 @@ describe("draft and card turns", () => {
   });
 });
 
+describe("special development cards", () => {
+  const useOnlyCard = (state: GameState, type: CardType): GameState => {
+    state.players[0].handCards = [{ instanceId: `card-${type}`, type }];
+    return play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: `card-${type}`,
+      mode: "production",
+    });
+  };
+
+  const threeAreaIntersection = (state: GameState) =>
+    state.intersections.find((intersection) => intersection.adjacentAreaIds.length === 3)!;
+
+  it("adds only tricolor city and neutral development to the draft deck as new card types", () => {
+    const state = createInitialState(["A", "B", "C", "D"]);
+    const draftTypes = new Set(state.draftPacks.flat().map((card) => card.type));
+    expect(draftTypes).toEqual(new Set<CardType>([
+      "red-production",
+      "blue-production",
+      "yellow-production",
+      "tricolor-city",
+      "neutral-development",
+    ]));
+    expect(state.draftPacks.every((pack) => pack.length === 8)).toBe(true);
+  });
+
+  it("lets tricolor city place up to two cubes into distinct areas and replaces normal placement", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
+    state = useOnlyCard(state, "tricolor-city");
+    expect(state.turnEndSpecialDevelopment).toBe("tricolor-city");
+
+    const normalPlacement = applyAction(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      placement: { areaId: "area-center", color: "red" },
+    });
+    expect(normalPlacement.ok).toBe(false);
+
+    const duplicate = applyAction(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      placements: [
+        { areaId: "area-center", color: "red" },
+        { areaId: "area-center", color: "blue" },
+      ],
+    });
+    expect(duplicate.ok).toBe(false);
+
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      placements: [
+        { areaId: "area-center", color: "red" },
+        { areaId: "area-east", color: "blue" },
+      ],
+    });
+    expect(state.areas.find((area) => area.id === "area-center")?.cubes.red).toBe(1);
+    expect(state.areas.find((area) => area.id === "area-east")?.cubes.blue).toBe(1);
+    expect(state.currentPlayerIndex).toBe(1);
+  });
+
+  it("lets tricolor city place one cube or skip all placement", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes.red = 1;
+    state = useOnlyCard(state, "tricolor-city");
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      placements: [{ areaId: "area-center", color: "red" }],
+    });
+    expect(getBoardCubeTotal(state)).toBe(1);
+
+    state.players[1].handCards = [{ instanceId: "p2-tricolor", type: "tricolor-city" }];
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-2",
+      cardInstanceId: "p2-tricolor",
+      mode: "production",
+    });
+    state = play(state, { type: "END_TURN", playerId: "player-2", placements: [] });
+    expect(getBoardCubeTotal(state)).toBe(1);
+  });
+
+  it("awards tricolor city once from one own city after development changes the latest area color", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const intersection = threeAreaIntersection(state);
+    intersection.cityStack = [{ playerId: "player-1" }, { playerId: "player-1" }];
+    const [redArea, blueArea, yellowArea] = intersection.adjacentAreaIds;
+    addBoardCubes(state, blueArea, { blue: 1 });
+    addBoardCubes(state, yellowArea, { yellow: 1 });
+    state.players[0].cubes = { red: 1, blue: 0, yellow: 0 };
+
+    state = useOnlyCard(state, "tricolor-city");
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      placements: [{ areaId: redArea, color: "red" }],
+    });
+
+    expect(getAreaColor(state.areas.find((area) => area.id === redArea)!.cubes)).toBe("red");
+    expect(state.players[0].cubes).toEqual({ red: 1, blue: 1, yellow: 1 });
+  });
+
+  it("does not combine multiple cities or count neutral areas for the tricolor city condition", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const first = threeAreaIntersection(state);
+    const second = state.intersections.find(
+      (intersection) => intersection.id !== first.id && intersection.adjacentAreaIds.length === 3
+    )!;
+    first.cityStack = [{ playerId: "player-1" }];
+    second.cityStack = [{ playerId: "player-1" }];
+    const [firstRed, firstBlue, firstNeutral] = first.adjacentAreaIds;
+    const [, secondBlue, secondYellow] = second.adjacentAreaIds;
+    addBoardCubes(state, firstRed, { red: 1 });
+    addBoardCubes(state, firstBlue, { blue: 1 });
+    addBoardCubes(state, firstNeutral, { red: 1, blue: 1 });
+    addBoardCubes(state, secondBlue, { blue: 1 });
+    addBoardCubes(state, secondYellow, { yellow: 1 });
+    const before = { ...state.players[0].cubes };
+
+    state = useOnlyCard(state, "tricolor-city");
+    state = play(state, { type: "END_TURN", playerId: "player-1", placements: [] });
+
+    expect(state.players[0].cubes).toEqual(before);
+  });
+
+  it("lets neutral development place two cubes only into the same target area", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
+    state = useOnlyCard(state, "neutral-development");
+    expect(state.turnEndSpecialDevelopment).toBe("neutral-development");
+
+    const invalid = applyAction(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      developmentAreaId: "area-center",
+      placements: [
+        { areaId: "area-center", color: "red" },
+        { areaId: "area-east", color: "blue" },
+      ],
+    });
+    expect(invalid.ok).toBe(false);
+
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      developmentAreaId: "area-center",
+      placements: [
+        { areaId: "area-center", color: "red" },
+        { areaId: "area-center", color: "blue" },
+      ],
+    });
+    expect(state.areas.find((area) => area.id === "area-center")?.cubes).toEqual({
+      red: 1,
+      blue: 1,
+      yellow: 0,
+    });
+  });
+
+  it("lets neutral development resolve with one placement or zero placement against a chosen area", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes.red = 1;
+    state = useOnlyCard(state, "neutral-development");
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      developmentAreaId: "area-center",
+      placements: [{ areaId: "area-center", color: "red" }],
+    });
+    expect(getBoardCubeTotal(state)).toBe(1);
+
+    state.players[1].handCards = [{ instanceId: "p2-neutral", type: "neutral-development" }];
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-2",
+      cardInstanceId: "p2-neutral",
+      mode: "production",
+    });
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-2",
+      developmentAreaId: "area-east",
+      placements: [],
+    });
+    expect(getBoardCubeTotal(state)).toBe(1);
+  });
+
+  it("awards neutral development only when the target is neutral after development", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const intersection = state.intersections.find((candidate) =>
+      candidate.adjacentAreaIds.includes("area-center")
+    )!;
+    intersection.cityStack = [{ playerId: "player-2" }, { playerId: "player-1" }];
+    addBoardCubes(state, "area-center", { red: 1 });
+    state.players[0].cubes = { red: 0, blue: 1, yellow: 0 };
+
+    state = useOnlyCard(state, "neutral-development");
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      developmentAreaId: "area-center",
+      placements: [{ areaId: "area-center", color: "blue" }],
+      bonusCubes: { red: 1, yellow: 1 },
+    });
+    expect(getAreaColor(state.areas.find((area) => area.id === "area-center")!.cubes)).toBe("neutral");
+    expect(state.players[0].cubes).toEqual({ red: 1, blue: 0, yellow: 1 });
+
+    state.players[1].handCards = [{ instanceId: "p2-neutral", type: "neutral-development" }];
+    state.players[1].cubes.yellow = 1;
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-2",
+      cardInstanceId: "p2-neutral",
+      mode: "production",
+    });
+    const rejected = applyAction(state, {
+      type: "END_TURN",
+      playerId: "player-2",
+      developmentAreaId: "area-east",
+      placements: [{ areaId: "area-east", color: "yellow" }],
+      bonusCubes: { red: 1 },
+    });
+    expect(rejected.ok).toBe(false);
+  });
+
+  it("counts all adjacent city pieces including other players and stacked levels for neutral development", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    const adjacent = state.intersections.filter((intersection) =>
+      intersection.adjacentAreaIds.includes("area-center")
+    );
+    adjacent[0].cityStack = [{ playerId: "player-1" }, { playerId: "player-2" }];
+    adjacent[1].cityStack = [{ playerId: "player-2" }];
+    state = useOnlyCard(state, "neutral-development");
+
+    state = play(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      developmentAreaId: "area-center",
+      placements: [],
+      bonusCubes: { red: 2, blue: 1 },
+    });
+
+    expect(state.players[0].cubes).toEqual({ red: 2, blue: 1, yellow: 0 });
+  });
+
+  it("rejects invalid special development without partially mutating state", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes.red = 1;
+    state = useOnlyCard(state, "neutral-development");
+    const before = JSON.stringify(state);
+    const result = applyAction(state, {
+      type: "END_TURN",
+      playerId: "player-1",
+      developmentAreaId: "area-center",
+      placements: [{ areaId: "area-center", color: "red" }],
+      bonusCubes: { red: 1 },
+    });
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("keeps city building available after special card use before development resolves", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
+    const cityId = emptyIntersectionIds(state, 1)[0];
+    state = useOnlyCard(state, "tricolor-city");
+    expect(toPublicState(state).legal.buildableIntersectionIds).toContain(cityId);
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack).toEqual([
+      { playerId: "player-1" },
+    ]);
+  });
+});
+
 describe("city rules and production", () => {
   it("pays city cost from hand cubes and does not remove board cubes", () => {
     let state = draftAll(createInitialState(["A", "B"]));

@@ -178,6 +178,17 @@ Initial card types:
   skip resolves, gain 1 yellow cube for each yellow area after that placement
   decision. Scoring still counts every connection between your city pieces and
   yellow areas as `city level * area level`.
+- Tricolor city: as its card action, replaces the normal turn-end placement
+  with up to two placements into two different areas, at most one cube per area.
+  After those placements, if at least one of your city pieces is adjacent to a
+  red area, a blue area, and a yellow area, gain one cube of each color. Multiple
+  cities are not combined to satisfy the condition, neutral areas do not count,
+  and the bonus happens at most once.
+- Neutral development: as its card action, replaces the normal turn-end
+  placement with up to two placements into one chosen area. After those
+  placements, if that chosen area is neutral, gain any colors of cubes equal to
+  the number of adjacent city pieces. City owner does not matter, and each piece
+  in a city stack counts separately.
 
 A city touching multiple areas of the target color scores each connection.
 Neutral areas are not scored by these cards.
@@ -198,6 +209,10 @@ cube total are recalculated from the new board state.
 If the used card is a red, blue, or yellow production card, its additional
 production is resolved only after this placement decision. Skipping placement
 uses the current area colors.
+
+If the used card is Tricolor city or Neutral development, the card's printed
+development replaces the normal one-cube turn-end placement. The normal
+placement cannot also be taken on that turn.
 
 ## Cities
 

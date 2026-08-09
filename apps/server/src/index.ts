@@ -9,6 +9,7 @@ import {
   cubeColors,
   type CardUseMode,
   type CubeColor,
+  type EndTurnPlacement,
   type GameAction,
   type GameResponse,
 } from "@sdb/protocol";
@@ -31,6 +32,30 @@ const normalizeNames = (body: unknown): string[] | null => {
 
 const isCubeColor = (value: unknown): value is CubeColor =>
   typeof value === "string" && cubeColors.includes(value as CubeColor);
+
+const parsePlacement = (value: unknown): EndTurnPlacement | null => {
+  if (!isRecord(value) || typeof value.areaId !== "string" || !isCubeColor(value.color)) {
+    return null;
+  }
+  return {
+    areaId: value.areaId,
+    color: value.color,
+  };
+};
+
+const parseBonusCubes = (value: unknown): Partial<Record<CubeColor, number>> | null => {
+  if (!isRecord(value)) return null;
+  const cubes: Partial<Record<CubeColor, number>> = {};
+  for (const color of cubeColors) {
+    const amount = value[color];
+    if (amount === undefined) continue;
+    if (typeof amount !== "number" || !Number.isInteger(amount) || amount < 0) {
+      return null;
+    }
+    cubes[color] = amount;
+  }
+  return cubes;
+};
 
 const parseAction = (value: unknown): GameAction | null => {
   if (!isRecord(value) || typeof value.type !== "string" || typeof value.playerId !== "string") {
@@ -75,17 +100,24 @@ const parseAction = (value: unknown): GameAction | null => {
       playerId: value.playerId,
     };
     if (value.placement !== undefined) {
-      if (
-        !isRecord(value.placement) ||
-        typeof value.placement.areaId !== "string" ||
-        !isCubeColor(value.placement.color)
-      ) {
-        return null;
-      }
-      action.placement = {
-        areaId: value.placement.areaId,
-        color: value.placement.color,
-      };
+      const placement = parsePlacement(value.placement);
+      if (!placement) return null;
+      action.placement = placement;
+    }
+    if (value.placements !== undefined) {
+      if (!Array.isArray(value.placements)) return null;
+      const placements = value.placements.map(parsePlacement);
+      if (placements.some((placement) => !placement)) return null;
+      action.placements = placements as NonNullable<typeof action.placements>;
+    }
+    if (value.developmentAreaId !== undefined) {
+      if (typeof value.developmentAreaId !== "string") return null;
+      action.developmentAreaId = value.developmentAreaId;
+    }
+    if (value.bonusCubes !== undefined) {
+      const bonusCubes = parseBonusCubes(value.bonusCubes);
+      if (!bonusCubes) return null;
+      action.bonusCubes = bonusCubes;
     }
     return action;
   }

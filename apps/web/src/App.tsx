@@ -44,6 +44,19 @@ const formatCubes = (cubes: PartialCubeCounts): string =>
     .map((color) => `${colorLabels[color]}${cubes[color]}`)
     .join(" ");
 
+const emptyCubeCounts = (): Record<CubeColor, number> => ({ red: 0, blue: 0, yellow: 0 });
+
+const getAreaColorFromCounts = (cubes: Record<CubeColor, number>): AreaColor => {
+  const counts = cubeColors.map((color) => ({ color, count: cubes[color] }));
+  const max = Math.max(...counts.map((entry) => entry.count));
+  const maxColors = counts.filter((entry) => entry.count === max);
+  if (max === 0 || maxColors.length === 3) return "neutral";
+  if (maxColors.length === 1) return maxColors[0].color;
+
+  const remaining = counts.filter((entry) => entry.count !== max);
+  return remaining[0]?.count > 0 ? remaining[0].color : "neutral";
+};
+
 export const App = () => {
   const [state, setState] = useState<PublicGameState | null>(null);
   const [error, setError] = useState<string>("");
@@ -54,6 +67,13 @@ export const App = () => {
   const [basicColor, setBasicColor] = useState<CubeColor>("red");
   const [endPlacementAreaId, setEndPlacementAreaId] = useState("");
   const [endPlacementColor, setEndPlacementColor] = useState<CubeColor>("red");
+  const [secondPlacementAreaId, setSecondPlacementAreaId] = useState("");
+  const [secondPlacementColor, setSecondPlacementColor] = useState<CubeColor>("blue");
+  const [neutralDevelopmentAreaId, setNeutralDevelopmentAreaId] = useState("");
+  const [neutralPlacementCount, setNeutralPlacementCount] = useState(0);
+  const [neutralFirstColor, setNeutralFirstColor] = useState<CubeColor>("red");
+  const [neutralSecondColor, setNeutralSecondColor] = useState<CubeColor>("blue");
+  const [neutralBonusCubes, setNeutralBonusCubes] = useState<Record<CubeColor, number>>(emptyCubeCounts);
   const [buildIntersectionId, setBuildIntersectionId] = useState("");
 
   useEffect(() => {
@@ -72,10 +92,26 @@ export const App = () => {
     setBasicColor("red");
     setEndPlacementAreaId("");
     setEndPlacementColor("red");
+    setSecondPlacementAreaId("");
+    setSecondPlacementColor("blue");
+    setNeutralDevelopmentAreaId("");
+    setNeutralPlacementCount(0);
+    setNeutralFirstColor("red");
+    setNeutralSecondColor("blue");
+    setNeutralBonusCubes(emptyCubeCounts());
     setBuildIntersectionId("");
   }, [state?.currentPlayerId, state?.phase, state?.round]);
 
   const selectedCardForAction = currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ?? null;
+  const availableUseModes: CardUseMode[] = selectedCardForAction?.color === "multi"
+    ? ["production", "basic"]
+    : ["production", "scoring", "basic"];
+
+  useEffect(() => {
+    if (selectedCardForAction?.color === "multi" && useMode === "scoring") {
+      setUseMode("production");
+    }
+  }, [selectedCardForAction?.instanceId, selectedCardForAction?.color, useMode]);
   const endPlacementCapacity = state?.legal.turnEndAreaCapacity ?? 0;
   const selectedEndPlacementArea =
     state?.areas.find((area) => area.id === endPlacementAreaId) ?? null;
@@ -91,6 +127,43 @@ export const App = () => {
   const turnEndProductionText = state?.turnEndProduction
     ? `追加生産見込み: ${colorLabels[state.turnEndProduction.color]} ${state.turnEndProduction.additionalCubes}`
     : "";
+  const turnEndDevelopment = state?.turnEndDevelopment ?? null;
+  const selectedNeutralDevelopmentArea =
+    state?.areas.find((area) => area.id === neutralDevelopmentAreaId) ?? null;
+  const plannedNeutralCubes = selectedNeutralDevelopmentArea
+    ? { ...selectedNeutralDevelopmentArea.cubes }
+    : emptyCubeCounts();
+  if (neutralPlacementCount >= 1) plannedNeutralCubes[neutralFirstColor] += 1;
+  if (neutralPlacementCount >= 2) plannedNeutralCubes[neutralSecondColor] += 1;
+  const plannedNeutralAreaColor = getAreaColorFromCounts(plannedNeutralCubes);
+  const neutralAdjacentCityPieces =
+    state && selectedNeutralDevelopmentArea && plannedNeutralAreaColor === "neutral"
+      ? state.intersections
+          .filter((intersection) => intersection.adjacentAreaIds.includes(selectedNeutralDevelopmentArea.id))
+          .reduce((total, intersection) => total + intersection.cityStack.length, 0)
+      : 0;
+  const neutralBonusTotal = cubeColors.reduce((total, color) => total + neutralBonusCubes[color], 0);
+  const tricolorSelectedAreaIds = [endPlacementAreaId, secondPlacementAreaId].filter(Boolean);
+  const tricolorHasDuplicateArea =
+    new Set(tricolorSelectedAreaIds).size !== tricolorSelectedAreaIds.length;
+  const tricolorRequiredCubes = emptyCubeCounts();
+  if (endPlacementAreaId) tricolorRequiredCubes[endPlacementColor] += 1;
+  if (secondPlacementAreaId) tricolorRequiredCubes[secondPlacementColor] += 1;
+  const tricolorCanPlace =
+    !tricolorHasDuplicateArea &&
+    (!endPlacementAreaId || placeableAreaIds.includes(endPlacementAreaId)) &&
+    (!secondPlacementAreaId || placeableAreaIds.includes(secondPlacementAreaId)) &&
+    cubeColors.every((color) => (currentPlayer?.cubes[color] ?? 0) >= tricolorRequiredCubes[color]);
+  const neutralRequiredCubes = emptyCubeCounts();
+  if (neutralPlacementCount >= 1) neutralRequiredCubes[neutralFirstColor] += 1;
+  if (neutralPlacementCount >= 2) neutralRequiredCubes[neutralSecondColor] += 1;
+  const neutralCanPlace =
+    !!neutralDevelopmentAreaId &&
+    (neutralPlacementCount === 0 || placeableAreaIds.includes(neutralDevelopmentAreaId)) &&
+    selectedNeutralDevelopmentArea !== null &&
+    selectedNeutralDevelopmentArea.cubeTotal + neutralPlacementCount <= endPlacementCapacity &&
+    cubeColors.every((color) => (currentPlayer?.cubes[color] ?? 0) >= neutralRequiredCubes[color]) &&
+    neutralBonusTotal === neutralAdjacentCityPieces;
   const worldLevelStatus = state
     ? `世界Lv${state.worldLevel} / 次の解禁: ${
         state.nextWorldLevelThreshold ? `${state.nextWorldLevelThreshold}点` : "なし"
@@ -166,6 +239,31 @@ export const App = () => {
     void sendAction(action);
   };
 
+  const endTricolorTurn = () => {
+    if (!state?.currentPlayerId) return;
+    const placements = [
+      endPlacementAreaId ? { areaId: endPlacementAreaId, color: endPlacementColor } : null,
+      secondPlacementAreaId ? { areaId: secondPlacementAreaId, color: secondPlacementColor } : null,
+    ].filter((placement): placement is { areaId: string; color: CubeColor } => placement !== null);
+    void sendAction({
+      type: "END_TURN",
+      playerId: state.currentPlayerId,
+      placements,
+    });
+  };
+
+  const endNeutralDevelopmentTurn = () => {
+    if (!state?.currentPlayerId || !neutralDevelopmentAreaId) return;
+    const colors = [neutralFirstColor, neutralSecondColor].slice(0, neutralPlacementCount);
+    void sendAction({
+      type: "END_TURN",
+      playerId: state.currentPlayerId,
+      developmentAreaId: neutralDevelopmentAreaId,
+      placements: colors.map((color) => ({ areaId: neutralDevelopmentAreaId, color })),
+      bonusCubes: neutralAdjacentCityPieces > 0 ? neutralBonusCubes : undefined,
+    });
+  };
+
   const claimWorldLevelBonus = (color: CubeColor) => {
     if (!state?.currentPlayerId) return;
     void sendAction({
@@ -174,6 +272,18 @@ export const App = () => {
       color,
     });
   };
+
+  const updateNeutralBonus = (color: CubeColor, value: number) => {
+    setNeutralBonusCubes((current) => ({
+      ...current,
+      [color]: Math.max(0, Number.isFinite(value) ? Math.floor(value) : 0),
+    }));
+  };
+
+  useEffect(() => {
+    if (neutralAdjacentCityPieces > 0 || neutralBonusTotal === 0) return;
+    setNeutralBonusCubes(emptyCubeCounts());
+  }, [neutralAdjacentCityPieces, neutralBonusTotal]);
 
   if (!state) {
     return (
@@ -349,14 +459,16 @@ export const App = () => {
                 </article>
               ) : null}
               <div className="mode-tabs" role="tablist" aria-label="カード用途">
-                {(["production", "scoring", "basic"] as CardUseMode[]).map((candidate) => (
+                {availableUseModes.map((candidate) => (
                   <button
                     key={candidate}
                     className={useMode === candidate ? "selected" : ""}
                     onClick={() => setUseMode(candidate)}
                     disabled={state.turnCardUsed}
                   >
-                    {candidate === "production" ? "生産" : candidate === "scoring" ? "得点" : "基本取得"}
+                    {candidate === "production"
+                      ? selectedCardForAction?.color === "multi" ? "行動" : "生産"
+                      : candidate === "scoring" ? "得点" : "基本取得"}
                   </button>
                 ))}
               </div>
@@ -380,7 +492,7 @@ export const App = () => {
             </section>
           ) : null}
 
-          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus ? (
+          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
             <section className="actions">
               <h2>ターン終了時配置</h2>
               {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
@@ -421,6 +533,152 @@ export const App = () => {
               </button>
               <button className="secondary wide" onClick={() => endTurn(false)} disabled={!state.legal.canEndTurn}>
                 置かずに手番終了
+              </button>
+            </section>
+          ) : null}
+
+          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
+            <section className="actions">
+              <h2>三色都市の開発</h2>
+              <p className="hint">異なる2エリアへ最大1個ずつ配置できます。開発後、条件を満たせば赤青黄を1個ずつ得ます。</p>
+              <div className="payment-grid">
+                <label>
+                  1個目 色
+                  <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
+                    {cubeColors.map((color) => (
+                      <option key={color} value={color}>
+                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  1個目 エリア
+                  <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
+                    <option value="">スキップ</option>
+                    {state.areas.map((area) => (
+                      <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
+                        {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  2個目 色
+                  <select value={secondPlacementColor} onChange={(event) => setSecondPlacementColor(event.target.value as CubeColor)}>
+                    {cubeColors.map((color) => (
+                      <option key={color} value={color}>
+                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  2個目 エリア
+                  <select value={secondPlacementAreaId} onChange={(event) => setSecondPlacementAreaId(event.target.value)}>
+                    <option value="">スキップ</option>
+                    {state.areas.map((area) => (
+                      <option
+                        key={area.id}
+                        value={area.id}
+                        disabled={!placeableAreaIds.includes(area.id) || area.id === endPlacementAreaId}
+                      >
+                        {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <button className="primary wide" onClick={endTricolorTurn} disabled={!state.legal.canEndTurn || !tricolorCanPlace}>
+                選択分を置いて手番終了
+              </button>
+              <button
+                className="secondary wide"
+                onClick={() => {
+                  if (!state.currentPlayerId) return;
+                  void sendAction({
+                    type: "END_TURN",
+                    playerId: state.currentPlayerId,
+                    placements: [],
+                  });
+                }}
+                disabled={!state.legal.canEndTurn}
+              >
+                すべてスキップして手番終了
+              </button>
+            </section>
+          ) : null}
+
+          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
+            <section className="actions">
+              <h2>中立開発</h2>
+              <p className="hint">対象エリア1つへ最大2個配置できます。開発後に中立なら隣接都市数だけ任意色を得ます。</p>
+              <label>
+                対象エリア
+                <select value={neutralDevelopmentAreaId} onChange={(event) => setNeutralDevelopmentAreaId(event.target.value)}>
+                  <option value="">選択</option>
+                  {state.areas.map((area) => (
+                    <option key={area.id} value={area.id}>
+                      {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                配置数
+                <select value={neutralPlacementCount} onChange={(event) => setNeutralPlacementCount(Number(event.target.value))}>
+                  {[0, 1, 2].map((count) => (
+                    <option key={count} value={count}>
+                      {count}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {neutralPlacementCount >= 1 ? (
+                <label>
+                  1個目 色
+                  <select value={neutralFirstColor} onChange={(event) => setNeutralFirstColor(event.target.value as CubeColor)}>
+                    {cubeColors.map((color) => (
+                      <option key={color} value={color}>
+                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {neutralPlacementCount >= 2 ? (
+                <label>
+                  2個目 色
+                  <select value={neutralSecondColor} onChange={(event) => setNeutralSecondColor(event.target.value as CubeColor)}>
+                    {cubeColors.map((color) => (
+                      <option key={color} value={color}>
+                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              <p className="hint">
+                開発後見込み: {areaColorLabels[plannedNeutralAreaColor]} / 任意色取得 {neutralAdjacentCityPieces}個
+              </p>
+              {neutralAdjacentCityPieces > 0 ? (
+                <div className="payment-grid">
+                  {cubeColors.map((color) => (
+                    <label key={color}>
+                      {colorLabels[color]}取得
+                      <input
+                        type="number"
+                        min="0"
+                        max={neutralAdjacentCityPieces}
+                        value={neutralBonusCubes[color]}
+                        onChange={(event) => updateNeutralBonus(color, Number(event.target.value))}
+                      />
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+              <button className="primary wide" onClick={endNeutralDevelopmentTurn} disabled={!state.legal.canEndTurn || !neutralCanPlace}>
+                中立開発を解決して手番終了
               </button>
             </section>
           ) : null}
@@ -467,10 +725,18 @@ export const App = () => {
 
         <Board
           state={state}
-          selectedAreaId={endPlacementAreaId}
+          selectedAreaId={turnEndDevelopment?.type === "neutral-development" ? neutralDevelopmentAreaId : endPlacementAreaId}
           selectedIntersectionId={buildIntersectionId}
-          placeableAreaIds={placeableAreaIds}
-          onAreaSelect={setEndPlacementAreaId}
+          placeableAreaIds={
+            turnEndDevelopment?.type === "neutral-development"
+              ? state.areas.map((area) => area.id)
+              : placeableAreaIds
+          }
+          onAreaSelect={
+            turnEndDevelopment?.type === "neutral-development"
+              ? setNeutralDevelopmentAreaId
+              : setEndPlacementAreaId
+          }
           onIntersectionSelect={setBuildIntersectionId}
         />
 
