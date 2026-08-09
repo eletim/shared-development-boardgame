@@ -81,6 +81,14 @@ const baseState = (
       city: null,
       cityStack: [],
     },
+    {
+      id: "intersection-02",
+      x: 86,
+      y: 0,
+      adjacentAreaIds: ["area-center"],
+      city: null,
+      cityStack: [],
+    },
   ],
   lastProduction: [
     { playerId: "player-1", playerName: "A", cubes: { red: 0, blue: 0, yellow: 0 } },
@@ -102,6 +110,18 @@ const baseState = (
   winners: [],
 });
 
+const withBuildableIntersections = (
+  state: PublicGameState,
+  buildableIntersectionIds: string[]
+): PublicGameState => ({
+  ...state,
+  legal: {
+    ...state.legal,
+    canBuildCity: buildableIntersectionIds.length > 0,
+    buildableIntersectionIds,
+  },
+});
+
 const mockFetch = (states: Array<PublicGameState | null>) => {
   let index = 0;
   vi.stubGlobal(
@@ -121,6 +141,9 @@ const lastRequestInit = (mock: ReturnType<typeof vi.fn>): RequestInit => {
   const call = mock.mock.calls[mock.mock.calls.length - 1] as unknown[];
   return (call[1] ?? {}) as RequestInit;
 };
+
+const lastRequestBody = (mock: ReturnType<typeof vi.fn>): string =>
+  String(lastRequestInit(mock).body ?? "");
 
 describe("App", () => {
   it("starts a game from the setup screen", async () => {
@@ -154,16 +177,16 @@ describe("App", () => {
     });
     await userEvent.click(screen.getByRole("button", { name: "基本取得" }));
     await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("USE_CARD");
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("basic");
+    expect(lastRequestBody(fetchMock)).toContain("USE_CARD");
+    expect(lastRequestBody(fetchMock)).toContain("basic");
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
       json: async () => ({ state: baseState("action", true) }),
     });
     await userEvent.click(screen.getByRole("button", { name: "置かずに手番終了" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("END_TURN");
-    expect(JSON.stringify(lastRequestInit(fetchMock))).not.toContain("placement");
+    expect(lastRequestBody(fetchMock)).toContain("END_TURN");
+    expect(lastRequestBody(fetchMock)).not.toContain("placement");
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -171,12 +194,12 @@ describe("App", () => {
     });
     await userEvent.selectOptions(screen.getByLabelText("エリア"), "area-center");
     await userEvent.click(screen.getByRole("button", { name: "1個置いて手番終了" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("END_TURN");
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("placement");
+    expect(lastRequestBody(fetchMock)).toContain("END_TURN");
+    expect(lastRequestBody(fetchMock)).toContain("placement");
 
     await userEvent.selectOptions(screen.getByLabelText("交点"), "intersection-01");
     await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("BUILD_CITY");
+    expect(lastRequestBody(fetchMock)).toContain("BUILD_CITY");
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -193,7 +216,173 @@ describe("App", () => {
     render(<App />);
     await screen.findByText(/ドラフト 1 \/ 8/);
     await userEvent.click(screen.getByRole("button", { name: /赤の生産/ }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("DRAFT_PICK");
+    expect(lastRequestBody(fetchMock)).toContain("DRAFT_PICK");
+  });
+
+  it("selects buildable intersections from the board before using a card", async () => {
+    mockFetch([baseState("action")]);
+    render(<App />);
+    await screen.findByRole("heading", { name: "都市建設" });
+
+    expect(screen.getByTestId("intersection-intersection-01")).toHaveClass("selectable");
+    expect(screen.getByTestId("intersection-intersection-02")).not.toHaveClass("selectable");
+
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    expect(screen.getByLabelText("交点")).toHaveValue("intersection-01");
+    expect(screen.getByRole("option", { name: /intersection-01/ })).not.toBeDisabled();
+    expect(screen.getByRole("option", { name: /intersection-02/ })).toBeDisabled();
+  });
+
+  it("keeps board city-build clicks enabled from server legal moves after a card action", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: baseState("action") }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText(/カード手番/);
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "基本取得" }));
+    await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
+    expect(lastRequestBody(fetchMock)).toContain("USE_CARD");
+
+    expect(await screen.findByText(/ターン終了時配置/)).toBeInTheDocument();
+    expect(screen.getByTestId("intersection-intersection-01")).toHaveClass("selectable");
+
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    expect(screen.getByLabelText("交点")).toHaveValue("intersection-01");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));
+    expect(lastRequestBody(fetchMock)).toContain("BUILD_CITY");
+    expect(lastRequestBody(fetchMock)).toContain("intersection-01");
+  });
+
+  it("keeps board city-build clicks enabled after scoring cards", async () => {
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: baseState("action") }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText(/カード手番/);
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "得点" }));
+    await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
+    expect(await screen.findByText(/ターン終了時配置/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    expect(screen.getByLabelText("交点")).toHaveValue("intersection-01");
+  });
+
+  it("keeps board city-build clicks enabled after resolving a world level bonus", async () => {
+    const pendingBonus = withBuildableIntersections(baseState("action", true), []);
+    pendingBonus.worldLevel = 2;
+    pendingBonus.areaCapacity = 4;
+    pendingBonus.highestContribution = 15;
+    pendingBonus.nextWorldLevelThreshold = 45;
+    pendingBonus.pendingWorldLevelBonus = {
+      level: 2,
+      playerId: "player-1",
+      playerName: "A",
+    };
+    pendingBonus.worldLevelUnlocks = [{
+      level: 2,
+      playerId: "player-1",
+      playerName: "A",
+      bonusColor: null,
+    }];
+    pendingBonus.legal.canClaimWorldLevelBonus = true;
+    pendingBonus.legal.canEndTurn = false;
+    pendingBonus.legal.placeableAreaIds = [];
+
+    const resolvedBonus = baseState("action", true);
+    resolvedBonus.worldLevel = 2;
+    resolvedBonus.areaCapacity = 4;
+    resolvedBonus.highestContribution = 15;
+    resolvedBonus.nextWorldLevelThreshold = 45;
+    resolvedBonus.worldLevelUnlocks = [{
+      level: 2,
+      playerId: "player-1",
+      playerName: "A",
+      bonusColor: "blue",
+    }];
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: baseState("action") }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByText(/カード手番/);
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: pendingBonus }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "得点" }));
+    await userEvent.click(screen.getByRole("button", { name: "カードを使用" }));
+    expect(await screen.findByText("世界Lv2を解禁しました")).toBeInTheDocument();
+    expect(screen.getByTestId("intersection-intersection-01")).not.toHaveClass("selectable");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: resolvedBonus }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "青" }));
+    expect(await screen.findByText(/ターン終了時配置/)).toBeInTheDocument();
+    expect(screen.getByTestId("intersection-intersection-01")).toHaveClass("selectable");
+  });
+
+  it("does not allow board clicks for intersections omitted from server legal moves", async () => {
+    mockFetch([withBuildableIntersections(baseState("action", true), [])]);
+    render(<App />);
+    await screen.findByRole("heading", { name: "都市建設" });
+
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    expect(screen.getByLabelText("交点")).toHaveValue("");
+    expect(screen.getByRole("option", { name: /intersection-01/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "都市を建設" })).toBeDisabled();
+  });
+
+  it("allows another board city-build click in the same turn after a build response keeps resources legal", async () => {
+    const afterFirstBuild = withBuildableIntersections(baseState("action", true), ["intersection-02"]);
+    afterFirstBuild.intersections[0].cityStack = [{
+      level: 1,
+      playerId: "player-1",
+      playerColor: "#d73a31",
+    }];
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: baseState("action", true) }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+    await screen.findByRole("heading", { name: "都市建設" });
+
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: afterFirstBuild }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));
+    expect(lastRequestBody(fetchMock)).toContain("intersection-01");
+
+    expect(await screen.findByTestId("intersection-intersection-02")).toHaveClass("selectable");
+    await userEvent.click(screen.getByTestId("intersection-intersection-02"));
+    expect(screen.getByLabelText("交点")).toHaveValue("intersection-02");
   });
 
   it("shows server-calculated turn-end production preview", async () => {
@@ -235,8 +424,8 @@ describe("App", () => {
     expect(screen.getByText("世界Lv2を解禁しました")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "青" }));
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("CLAIM_WORLD_LEVEL_BONUS");
-    expect(JSON.stringify(lastRequestInit(fetchMock))).toContain("blue");
+    expect(lastRequestBody(fetchMock)).toContain("CLAIM_WORLD_LEVEL_BONUS");
+    expect(lastRequestBody(fetchMock)).toContain("blue");
   });
 
   it("only enables turn-end placement areas that fit the next capacity", async () => {
