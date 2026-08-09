@@ -354,7 +354,7 @@ export const App = () => {
       </section>
 
       <section className="workspace">
-        <aside className="left-panel" aria-label="カード選択と都市建設・エリア開発">
+        <aside className="card-panel" aria-label="カード選択">
           {state.phase === "draft" ? (
             <section className="actions card-actions">
               <h2>ドラフト {state.draftPickNumber} / 8</h2>
@@ -367,67 +367,6 @@ export const App = () => {
                   </button>
                 ))}
               </div>
-            </section>
-          ) : null}
-
-          {state.phase === "action" ? (
-            state.pendingWorldLevelBonus ? (
-              <section className="actions world-bonus">
-                <h2>世界Lv{state.pendingWorldLevelBonus.level}を解禁しました</h2>
-                <p className="hint">
-                  {state.pendingWorldLevelBonus.playerName}はボーナスとして好きなキューブを1個選んでください。
-                </p>
-                <div className="bonus-buttons" aria-label="解禁ボーナス">
-                  {cubeColors.map((color) => (
-                    <button
-                      key={color}
-                      className={`cube-choice ${color}`}
-                      onClick={() => claimWorldLevelBonus(color)}
-                      disabled={!state.legal.canClaimWorldLevelBonus}
-                    >
-                      {colorLabels[color]}
-                    </button>
-                  ))}
-                </div>
-                <p className="hint">取得後も{state.currentPlayerName}のターンを継続します。</p>
-              </section>
-            ) : null
-          ) : null}
-
-          {state.phase === "action" ? (
-            <section className="actions city-build-actions">
-              <h2>都市建設</h2>
-              <label>
-                交点
-                <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
-                  <option value="">選択</option>
-                  {state.intersections
-                    .map((intersection) => (
-                      <option
-                        key={intersection.id}
-                        value={intersection.id}
-                        disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
-                      >
-                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
-                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="hint">
-                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
-              </p>
-              <button
-                className="primary wide"
-                onClick={confirmBuild}
-                disabled={
-                  !state.legal.canBuildCity ||
-                  !buildIntersectionId ||
-                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
-                }
-              >
-                都市を建設
-              </button>
             </section>
           ) : null}
 
@@ -492,6 +431,69 @@ export const App = () => {
 
               <button className="primary wide" onClick={confirmUseCard} disabled={!state.legal.canUseCard || !selectedCardForAction}>
                 カードを使用
+              </button>
+            </section>
+          ) : null}
+        </aside>
+
+        <aside className="operations-panel" aria-label="都市建設・エリア開発">
+          {state.phase === "action" ? (
+            state.pendingWorldLevelBonus ? (
+              <section className="actions world-bonus">
+                <h2>世界Lv{state.pendingWorldLevelBonus.level}を解禁しました</h2>
+                <p className="hint">
+                  {state.pendingWorldLevelBonus.playerName}はボーナスとして好きなキューブを1個選んでください。
+                </p>
+                <div className="bonus-buttons" aria-label="解禁ボーナス">
+                  {cubeColors.map((color) => (
+                    <button
+                      key={color}
+                      className={`cube-choice ${color}`}
+                      onClick={() => claimWorldLevelBonus(color)}
+                      disabled={!state.legal.canClaimWorldLevelBonus}
+                    >
+                      {colorLabels[color]}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">取得後も{state.currentPlayerName}のターンを継続します。</p>
+              </section>
+            ) : null
+          ) : null}
+
+          {state.phase === "action" ? (
+            <section className="actions city-build-actions">
+              <h2>都市建設</h2>
+              <label>
+                交点
+                <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
+                  <option value="">選択</option>
+                  {state.intersections
+                    .map((intersection) => (
+                      <option
+                        key={intersection.id}
+                        value={intersection.id}
+                        disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
+                      >
+                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
+                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
+                      </option>
+                    ))}
+                </select>
+              </label>
+              <p className="hint">
+                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+              </p>
+              <button
+                className="primary wide"
+                onClick={confirmBuild}
+                disabled={
+                  !state.legal.canBuildCity ||
+                  !buildIntersectionId ||
+                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
+                }
+              >
+                都市を建設
               </button>
             </section>
           ) : null}

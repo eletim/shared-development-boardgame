@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { App } from "./App";
@@ -167,14 +167,40 @@ describe("App", () => {
     mockFetch([baseState("action", true)]);
     render(<App />);
 
+    const cardPanel = await screen.findByRole("complementary", { name: "カード選択" });
+    const operationsPanel = screen.getByRole("complementary", { name: "都市建設・エリア開発" });
     const cardSection = (await screen.findByRole("heading", { name: "カード選択" })).closest("section");
     const citySection = screen.getByRole("heading", { name: "都市建設" }).closest("section");
     const developmentSection = screen.getByRole("heading", { name: "ターン終了時配置" }).closest("section");
 
     expect(screen.queryByRole("heading", { name: "都市生産" })).not.toBeInTheDocument();
+    expect(within(cardPanel).queryByRole("heading", { name: "都市建設" })).not.toBeInTheDocument();
+    expect(within(cardPanel).queryByRole("heading", { name: "ターン終了時配置" })).not.toBeInTheDocument();
+    expect(within(operationsPanel).getByRole("heading", { name: "都市建設" })).toBeInTheDocument();
+    expect(within(operationsPanel).getByRole("heading", { name: "ターン終了時配置" })).toBeInTheDocument();
     expect(cardSection).toHaveClass("card-actions");
     expect(citySection).toHaveClass("city-build-actions");
     expect(developmentSection).toHaveClass("development-actions");
+  });
+
+  it("keeps city production results available in history without listing zero production rows", async () => {
+    const state = baseState("action", true);
+    state.history = [{
+      id: 1,
+      round: 2,
+      phase: "draft",
+      playerId: null,
+      playerName: "System",
+      type: "ROUND_START",
+      summary: "ラウンド2開始。都市生産: A 赤1",
+    }];
+    mockFetch([state]);
+    render(<App />);
+
+    expect(await screen.findByText("ラウンド2開始。都市生産: A 赤1")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "都市生産" })).not.toBeInTheDocument();
+    expect(screen.queryByText("A なし")).not.toBeInTheDocument();
+    expect(screen.queryByText("B なし")).not.toBeInTheDocument();
   });
 
   it("sends draft, card use, and build actions from the controls", async () => {

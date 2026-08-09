@@ -210,27 +210,32 @@ select {
 .workspace {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(560px, 640px) minmax(660px, 1fr);
+  grid-template-columns: minmax(220px, 270px) minmax(280px, 340px) minmax(640px, 1fr);
   grid-template-areas:
-    "controls board"
-    "controls history";
+    "cards operations board"
+    "cards operations history";
   gap: 10px;
   align-items: start;
 }
 
-.left-panel {
-  grid-area: controls;
+.card-panel,
+.operations-panel,
+.right-panel {
   display: grid;
-  grid-template-columns: minmax(230px, 0.9fr) minmax(300px, 1.1fr);
-  gap: 10px;
   align-content: start;
+  gap: 10px;
+}
+
+.card-panel {
+  grid-area: cards;
+}
+
+.operations-panel {
+  grid-area: operations;
 }
 
 .right-panel {
   grid-area: history;
-  display: grid;
-  align-content: start;
-  gap: 10px;
 }
 
 .actions,
@@ -247,16 +252,6 @@ select {
 .results h2 {
   margin: 0 0 12px;
   font-size: 16px;
-}
-
-.card-actions {
-  grid-column: 1;
-}
-
-.world-bonus,
-.city-build-actions,
-.development-actions {
-  grid-column: 2;
 }
 
 .mode-tabs {
@@ -499,7 +494,7 @@ select {
   color: #5b5f56;
 }
 
-@media (max-width: 1100px) {
+@media (max-width: 1180px) {
   .player-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -507,7 +502,8 @@ select {
   .workspace {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "controls"
+      "cards"
+      "operations"
       "board"
       "history";
   }
@@ -518,14 +514,7 @@ select {
 }
 
 @media (max-width: 760px) {
-  .left-panel {
+  .payment-grid {
     grid-template-columns: 1fr;
-  }
-
-  .card-actions,
-  .world-bonus,
-  .city-build-actions,
-  .development-actions {
-    grid-column: 1;
   }
 }
