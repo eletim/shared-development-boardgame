@@ -1,7 +1,19 @@
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
-import { join, resolve } from "node:path";
-import { simulationSchemaVersion, type CompletedGameRecord, type GameRecord, type ReplayStep, type SimulationMetadata, type SimulationSummary } from "@sdb/simulation";
-import { cubeColors, type AreaColor, type CardType, type CardUseMode, type CubeColor } from "@sdb/protocol";
+import { isAbsolute, join, resolve } from "node:path";
+import {
+  expandReplayLog,
+  replayLogFormat,
+  simulationSchemaVersion,
+  type GameRecord,
+  type PersistedCompletedGameRecord,
+  type PersistedGameRecord,
+  type ReplayDeltaStep,
+  type ReplayLogHeader,
+  type ReplayStep,
+  type SimulationMetadata,
+  type SimulationSummary,
+} from "@sdb/simulation";
+import { type AreaColor, type CardType, type CardUseMode } from "@sdb/protocol";
 
 export class SimulationDataError extends Error {
   statusCode: number;
@@ -95,6 +107,14 @@ const assertRunId = (runId: string): void => {
   }
 };
 
+const assertReplayFormat = (format: unknown, label: string): void => {
+  if (format !== replayLogFormat) {
+    throw new SimulationDataError(
+      `${label} has unsupported replay format "${String(format)}"; supported replay format is "${replayLogFormat}".`
+    );
+  }
+};
+
 export const resolveSimulationResultsDirectory = async (configured?: string): Promise<string> => {
   const candidates = configured
     ? [configured]
@@ -142,12 +162,60 @@ const readSummary = async (directory: string): Promise<SimulationSummary> => {
   return summary;
 };
 
-const readGames = async (directory: string): Promise<GameRecord[]> => {
-  const games = await parseJsonlFile<GameRecord>(join(directory, "games.jsonl"), "games.jsonl");
+const readGames = async (directory: string): Promise<PersistedGameRecord[]> => {
+  const games = await parseJsonlFile<PersistedGameRecord>(join(directory, "games.jsonl"), "games.jsonl");
   for (const game of games) {
     assertSchema(isObject(game) ? game.schemaVersion : undefined, `games.jsonl game ${isObject(game) && typeof game.gameId === "string" ? game.gameId : ""}`.trim());
+    assertReplayFormat(isObject(game) ? game.replayFormat : undefined, `games.jsonl game ${isObject(game) && typeof game.gameId === "string" ? game.gameId : ""}`.trim());
+    if (!isObject(game) || typeof game.replayFile !== "string") {
+      throw new SimulationDataError("games.jsonl contains a game without replayFile.");
+    }
+    if ("replay" in game) {
+      throw new SimulationDataError("games.jsonl must not embed replay steps for the current schema.");
+    }
   }
   return games;
+};
+
+const replayFilePath = (directory: string, replayFile: string): string => {
+  if (isAbsolute(replayFile)) {
+    throw new SimulationDataError("Invalid replay file path.", 400);
+  }
+  const target = resolve(directory, replayFile);
+  const base = resolve(directory);
+  if (!target.startsWith(`${base}/`) && target !== base) {
+    throw new SimulationDataError("Invalid replay file path.", 400);
+  }
+  return target;
+};
+
+const readReplay = async (
+  directory: string,
+  game: PersistedGameRecord
+): Promise<ReplayStep[]> => {
+  const rows = await parseJsonlFile<ReplayLogHeader | ReplayDeltaStep>(
+    replayFilePath(directory, game.replayFile),
+    game.replayFile
+  );
+  const [header, ...steps] = rows;
+  if (!isObject(header) || header.kind !== "replay") {
+    throw new SimulationDataError(`${game.replayFile} is missing a replay header.`);
+  }
+  assertSchema(header.schemaVersion, `${game.replayFile} header`);
+  assertReplayFormat(header.format, `${game.replayFile} header`);
+  if (header.gameId !== game.gameId || header.gameSeed !== game.gameSeed) {
+    throw new SimulationDataError(`${game.replayFile} does not match games.jsonl metadata.`);
+  }
+  try {
+    const replay = expandReplayLog(header, steps as ReplayDeltaStep[]);
+    if (replay.length !== game.replayStepCount) {
+      throw new Error(`expected ${game.replayStepCount} steps, got ${replay.length}`);
+    }
+    return replay;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new SimulationDataError(`Invalid replay delta log in ${game.replayFile}: ${message}`);
+  }
 };
 
 export type SimulationRunListItem = {
@@ -245,8 +313,8 @@ export type SimulationRunDetails = {
   games: GameListItem[];
 };
 
-const completedOnly = (records: GameRecord[]): CompletedGameRecord[] =>
-  records.filter((record): record is CompletedGameRecord => record.status === "completed");
+const completedOnly = (records: PersistedGameRecord[]): PersistedCompletedGameRecord[] =>
+  records.filter((record): record is PersistedCompletedGameRecord => record.status === "completed");
 
 const average = (values: number[]): number | null =>
   values.length > 0 ? values.reduce((total, value) => total + value, 0) / values.length : null;
@@ -276,7 +344,7 @@ const scoreDistribution = (values: number[]): { bucket: string; count: number }[
 const playerIndexes = (playerCount: number): string[] =>
   Array.from({ length: playerCount }, (_, index) => `player-${index + 1}`);
 
-const computeScoreStats = (completed: CompletedGameRecord[], playerCount: number): ScoreStatistics => {
+const computeScoreStats = (completed: PersistedCompletedGameRecord[], playerCount: number): ScoreStatistics => {
   const scores = completed.flatMap((record) => record.finalScores.map((score) => score.finalScore));
   const wins: Record<string, number> = Object.fromEntries(playerIndexes(playerCount).map((id) => [id, 0]));
   const rankTotals: Record<string, number> = Object.fromEntries(playerIndexes(playerCount).map((id) => [id, 0]));
@@ -310,7 +378,7 @@ const computeScoreStats = (completed: CompletedGameRecord[], playerCount: number
   };
 };
 
-const computeLevelStats = (completed: CompletedGameRecord[], playerCount: number, level: 2 | 3): LevelStatistics => {
+const computeLevelStats = (completed: PersistedCompletedGameRecord[], playerCount: number, level: 2 | 3): LevelStatistics => {
   const unlocks = completed
     .map((record) => record.stats.worldLevelUnlocks.find((unlock) => unlock.level === level) ?? null)
     .filter((unlock): unlock is NonNullable<typeof unlock> => unlock !== null);
@@ -332,13 +400,7 @@ const computeLevelStats = (completed: CompletedGameRecord[], playerCount: number
   };
 };
 
-const replayEvents = (record: CompletedGameRecord, eventType: ReplayStep["eventType"]): ReplayStep[] =>
-  record.replay.filter((step) => step.eventType === eventType);
-
-const cubeTotal = (cubes: Partial<Record<CubeColor, number>> | undefined): number =>
-  cubes ? cubeColors.reduce((total, color) => total + (cubes[color] ?? 0), 0) : 0;
-
-const computeCardStats = (completed: CompletedGameRecord[]): CardStatistics[] => {
+const computeCardStats = (completed: PersistedCompletedGameRecord[]): CardStatistics[] => {
   const cardRows = new Map<CardType, {
     draftCount: number;
     useCount: number;
@@ -374,33 +436,29 @@ const computeCardStats = (completed: CompletedGameRecord[]): CardStatistics[] =>
       row.draftCount += record.stats.draftedCards[type] ?? 0;
       row.useCount += record.stats.usedCards[type] ?? 0;
     }
-    for (const step of replayEvents(record, "draft_pick")) {
-      const cardType = typeof step.details.cardType === "string" ? step.details.cardType as CardType : null;
-      if (!cardType || !cardRows.has(cardType) || !step.playerId) continue;
-      const key = `${record.gameId}:${cardType}:${step.playerId}`;
-      const row = cardRows.get(cardType)!;
-      if (row.drafterGamePlayers.has(key)) continue;
-      row.drafterGamePlayers.add(key);
-      const result = results.get(step.playerId);
-      if (!result) continue;
-      row.drafterScores.push(result.finalScore);
-      row.drafterRanks.push(result.rank);
-      if (winners.has(step.playerId)) row.drafterWins += 1 / record.winners.length;
+    for (const type of cardTypes) {
+      const row = cardRows.get(type)!;
+      const drafters = record.stats.draftedCardsByPlayer[type] ?? {};
+      for (const playerId of Object.keys(drafters)) {
+        const key = `${record.gameId}:${type}:${playerId}`;
+        if (row.drafterGamePlayers.has(key)) continue;
+        row.drafterGamePlayers.add(key);
+        const result = results.get(playerId);
+        if (!result) continue;
+        row.drafterScores.push(result.finalScore);
+        row.drafterRanks.push(result.rank);
+        if (winners.has(playerId)) row.drafterWins += 1 / record.winners.length;
+      }
     }
-    for (const step of replayEvents(record, "card_use")) {
-      const cardType = typeof step.details.cardType === "string" ? step.details.cardType as CardType : null;
-      const mode = typeof step.details.mode === "string" ? step.details.mode as CardUseMode : null;
-      if (cardType && cardRows.has(cardType) && mode && cardModes.includes(mode)) {
-        cardRows.get(cardType)!.modes[mode] += 1;
+    for (const type of cardTypes) {
+      const row = cardRows.get(type)!;
+      for (const mode of cardModes) {
+        row.modes[mode] += record.stats.cardUseModesByType[type]?.[mode] ?? 0;
       }
     }
     cardRows.get("tricolor-city")!.tricolorBonusCount += record.stats.tricolorBonusCount;
     cardRows.get("neutral-development")!.neutralBonusCount += record.stats.neutralDevelopmentBonusCount;
-    for (const step of replayEvents(record, "special_development")) {
-      if (step.details.developmentType !== "neutral-development") continue;
-      const action = step.action;
-      if (action?.type !== "END_TURN") continue;
-      const total = cubeTotal(action.bonusCubes);
+    for (const total of record.stats.neutralDevelopmentBonusCubeTotals ?? []) {
       if (total > 0) cardRows.get("neutral-development")!.neutralBonusCubeTotals.push(total);
     }
   }
@@ -436,7 +494,7 @@ const computeCardStats = (completed: CompletedGameRecord[]): CardStatistics[] =>
   });
 };
 
-const computeCityStats = (completed: CompletedGameRecord[]): CityStatistics => {
+const computeCityStats = (completed: PersistedCompletedGameRecord[]): CityStatistics => {
   const buildsByLevel = emptyCityLevelCounts();
   const winnerCityCounts: number[] = [];
   const winnerCityLevels = emptyCityLevelCounts();
@@ -478,7 +536,7 @@ const computeCityStats = (completed: CompletedGameRecord[]): CityStatistics => {
   };
 };
 
-const computeAreaStats = (completed: CompletedGameRecord[]): AreaStatistics => {
+const computeAreaStats = (completed: PersistedCompletedGameRecord[]): AreaStatistics => {
   const finalTotals = emptyAreaColorCounts();
   const roundColorTotals = new Map<number, Record<AreaColor, number>>();
   const roundLevelTotals = new Map<number, Record<0 | 1 | 2 | 3, number>>();
@@ -522,7 +580,7 @@ const computeAreaStats = (completed: CompletedGameRecord[]): AreaStatistics => {
   };
 };
 
-const gameListItem = (record: GameRecord): GameListItem => {
+const gameListItem = (record: PersistedGameRecord): GameListItem => {
   if (record.status === "failed") {
     return {
       gameId: record.gameId,
@@ -566,7 +624,7 @@ const gameListItem = (record: GameRecord): GameListItem => {
   };
 };
 
-export const analyzeSimulationRun = (records: GameRecord[], playerCount: number): SimulationRunAnalysis => {
+export const analyzeSimulationRun = (records: PersistedGameRecord[], playerCount: number): SimulationRunAnalysis => {
   const completed = completedOnly(records);
   return {
     score: computeScoreStats(completed, playerCount),
@@ -629,5 +687,12 @@ export const loadSimulationGame = async (baseDirectory: string, runId: string, g
   const games = await readGames(directory);
   const game = games.find((record) => record.gameId === gameId || record.gameSeed === gameId);
   if (!game) throw new SimulationDataError(`Simulation game not found: ${gameId}`, 404);
-  return game;
+  const record: Partial<PersistedGameRecord> = { ...game };
+  delete record.replayFile;
+  delete record.replayFormat;
+  delete record.replayStepCount;
+  return {
+    ...record,
+    replay: await readReplay(directory, game),
+  } as GameRecord;
 };

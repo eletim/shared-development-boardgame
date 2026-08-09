@@ -1,5 +1,11 @@
 import { type CardType, type CardUseMode } from "@sdb/protocol";
-import { simulationSchemaVersion, type CompletedGameRecord, type GameRecord, type SimulationSummary } from "./types";
+import {
+  simulationSchemaVersion,
+  type CompletedGameRecord,
+  type PersistedCompletedGameRecord,
+  type SimulationSummary,
+  type SimulationSummaryRecord,
+} from "./types";
 
 const cardTypes: CardType[] = [
   "red-production",
@@ -19,10 +25,12 @@ const emptyModeValues = (): Record<CardUseMode, number> =>
 const average = (values: number[]): number | null =>
   values.length > 0 ? values.reduce((total, value) => total + value, 0) / values.length : null;
 
-const completedOnly = (records: GameRecord[]): CompletedGameRecord[] =>
-  records.filter((record): record is CompletedGameRecord => record.status === "completed");
+type SummaryCompletedRecord = CompletedGameRecord | PersistedCompletedGameRecord;
 
-export const createSummary = (records: GameRecord[], playerCount: number): SimulationSummary => {
+const completedOnly = (records: SimulationSummaryRecord[]): SummaryCompletedRecord[] =>
+  records.filter((record): record is SummaryCompletedRecord => record.status === "completed");
+
+export const createSummary = (records: SimulationSummaryRecord[], playerCount: number): SimulationSummary => {
   const completed = completedOnly(records);
   const failedCount = records.length - completed.length;
   const scoreValues = completed.flatMap((record) =>

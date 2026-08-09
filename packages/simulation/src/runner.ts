@@ -37,8 +37,17 @@ const emptyCubeCounts = (): CubeCounts => ({ red: 0, blue: 0, yellow: 0 });
 const emptyCardTypeCounts = (): Record<CardType, number> =>
   Object.fromEntries(cardTypes.map((type) => [type, 0])) as Record<CardType, number>;
 
+const emptyCardTypePlayerCounts = (): Record<CardType, Record<string, number>> =>
+  Object.fromEntries(cardTypes.map((type) => [type, {}])) as Record<CardType, Record<string, number>>;
+
 const emptyCardModeCounts = (): Record<CardUseMode, number> =>
   Object.fromEntries(cardModes.map((mode) => [mode, 0])) as Record<CardUseMode, number>;
+
+const emptyCardModeCountsByType = (): Record<CardType, Record<CardUseMode, number>> =>
+  Object.fromEntries(cardTypes.map((type) => [type, emptyCardModeCounts()])) as Record<
+    CardType,
+    Record<CardUseMode, number>
+  >;
 
 const emptyCityLevelCounts = (): Record<1 | 2 | 3, number> => ({ 1: 0, 2: 0, 3: 0 });
 
@@ -82,11 +91,14 @@ const createReplaySnapshot = (state: GameState): ReplaySnapshot => {
 const createStats = (): GameStats => ({
   worldLevelUnlocks: [],
   draftedCards: emptyCardTypeCounts(),
+  draftedCardsByPlayer: emptyCardTypePlayerCounts(),
   usedCards: emptyCardTypeCounts(),
   cardUseModes: emptyCardModeCounts(),
+  cardUseModesByType: emptyCardModeCountsByType(),
   tricolorBonusCount: 0,
   neutralDevelopmentBonusCount: 0,
   neutralDevelopmentBonusCubes: emptyCubeCounts(),
+  neutralDevelopmentBonusCubeTotals: [],
   cityBuildsByLevel: emptyCityLevelCounts(),
   emptyIntersectionBuilds: 0,
   stackedCityBuilds: 0,
@@ -175,6 +187,10 @@ const recordActionStats = (
       (candidate) => candidate.instanceId === action.cardInstanceId
     );
     if (card) stats.draftedCards[card.type] += 1;
+    if (card) {
+      stats.draftedCardsByPlayer[card.type][action.playerId] =
+        (stats.draftedCardsByPlayer[card.type][action.playerId] ?? 0) + 1;
+    }
     appendReplay(replay, after, "draft_pick", action, { cardType: card?.type ?? null });
   }
 
@@ -182,6 +198,7 @@ const recordActionStats = (
     const cardType = cardTypeBeforeUse(before, action);
     if (cardType) stats.usedCards[cardType] += 1;
     stats.cardUseModes[action.mode] += 1;
+    if (cardType) stats.cardUseModesByType[cardType][action.mode] += 1;
     appendReplay(replay, after, "card_use", action, { cardType, mode: action.mode });
   }
 
@@ -250,6 +267,7 @@ const recordActionStats = (
         const neutralBonus = normalizeCubeCounts(action.bonusCubes);
         if (before.turnEndSpecialDevelopment === "neutral-development" && cubeTotal(neutralBonus) > 0) {
           stats.neutralDevelopmentBonusCount += 1;
+          stats.neutralDevelopmentBonusCubeTotals.push(cubeTotal(neutralBonus));
           for (const color of cubeColors) {
             stats.neutralDevelopmentBonusCubes[color] += neutralBonus[color];
           }

@@ -2,7 +2,17 @@ import { mkdtemp, rm, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { simulationSchemaVersion, type CompletedGameRecord, type GameRecord, type ReplaySnapshot, type SimulationMetadata, type SimulationSummary } from "@sdb/simulation";
+import {
+  createReplayLog,
+  replayLogFormat,
+  simulationSchemaVersion,
+  type CompletedGameRecord,
+  type GameRecord,
+  type PersistedGameRecord,
+  type ReplaySnapshot,
+  type SimulationMetadata,
+  type SimulationSummary,
+} from "@sdb/simulation";
 import { analyzeSimulationRun, listSimulationRuns, loadSimulationGame, loadSimulationRun, SimulationDataError } from "./simulation-viewer";
 
 let temporaryDirectories: string[] = [];
@@ -138,11 +148,26 @@ const completedGameOne = (): CompletedGameRecord => ({
   stats: {
     worldLevelUnlocks: [{ level: 2, step: 5, round: 2, playerId: "player-1" }],
     draftedCards: { "red-production": 1, "blue-production": 0, "yellow-production": 0, "tricolor-city": 1, "neutral-development": 1 },
+    draftedCardsByPlayer: {
+      "red-production": { "player-1": 1 },
+      "blue-production": {},
+      "yellow-production": {},
+      "tricolor-city": { "player-2": 1 },
+      "neutral-development": { "player-1": 1 },
+    },
     usedCards: { "red-production": 2, "blue-production": 0, "yellow-production": 0, "tricolor-city": 1, "neutral-development": 1 },
     cardUseModes: { production: 3, scoring: 1, basic: 0 },
+    cardUseModesByType: {
+      "red-production": { production: 1, scoring: 1, basic: 0 },
+      "blue-production": { production: 0, scoring: 0, basic: 0 },
+      "yellow-production": { production: 0, scoring: 0, basic: 0 },
+      "tricolor-city": { production: 1, scoring: 0, basic: 0 },
+      "neutral-development": { production: 1, scoring: 0, basic: 0 },
+    },
     tricolorBonusCount: 1,
     neutralDevelopmentBonusCount: 1,
     neutralDevelopmentBonusCubes: { red: 1, blue: 1, yellow: 0 },
+    neutralDevelopmentBonusCubeTotals: [2],
     cityBuildsByLevel: { 1: 2, 2: 1, 3: 0 },
     emptyIntersectionBuilds: 2,
     stackedCityBuilds: 1,
@@ -199,11 +224,26 @@ const completedGameTwo = (): CompletedGameRecord => ({
       { level: 3, step: 12, round: 3, playerId: "player-2" },
     ],
     draftedCards: { "red-production": 1, "blue-production": 0, "yellow-production": 0, "tricolor-city": 0, "neutral-development": 1 },
+    draftedCardsByPlayer: {
+      "red-production": { "player-2": 1 },
+      "blue-production": {},
+      "yellow-production": {},
+      "tricolor-city": {},
+      "neutral-development": { "player-2": 1 },
+    },
     usedCards: { "red-production": 1, "blue-production": 0, "yellow-production": 0, "tricolor-city": 0, "neutral-development": 1 },
     cardUseModes: { production: 1, scoring: 0, basic: 1 },
+    cardUseModesByType: {
+      "red-production": { production: 0, scoring: 0, basic: 1 },
+      "blue-production": { production: 0, scoring: 0, basic: 0 },
+      "yellow-production": { production: 0, scoring: 0, basic: 0 },
+      "tricolor-city": { production: 0, scoring: 0, basic: 0 },
+      "neutral-development": { production: 1, scoring: 0, basic: 0 },
+    },
     tricolorBonusCount: 0,
     neutralDevelopmentBonusCount: 1,
     neutralDevelopmentBonusCubes: { red: 0, blue: 0, yellow: 2 },
+    neutralDevelopmentBonusCubeTotals: [2],
     cityBuildsByLevel: { 1: 1, 2: 0, 3: 1 },
     emptyIntersectionBuilds: 1,
     stackedCityBuilds: 1,
@@ -262,14 +302,34 @@ const summary = (): SimulationSummary => ({
   averageNeutralAreaCount: 3,
 });
 
+const persistRecord = (record: GameRecord): PersistedGameRecord => {
+  const { replay, ...rest } = record;
+  return {
+    ...rest,
+    replayFormat: replayLogFormat,
+    replayFile: `replays/${record.gameId}.jsonl`,
+    replayStepCount: replay.length,
+  } as PersistedGameRecord;
+};
+
+const writeReplay = async (runDirectory: string, record: GameRecord) => {
+  const replayLog = createReplayLog(record.gameId, record.gameSeed, record.replay, simulationSchemaVersion);
+  await writeFile(
+    join(runDirectory, "replays", `${record.gameId}.jsonl`),
+    `${[replayLog.header, ...replayLog.steps].map((entry) => JSON.stringify(entry)).join("\n")}\n`
+  );
+};
+
 const writeRun = async (records: GameRecord[] = [completedGameOne(), completedGameTwo()]) => {
   const root = await mkdtemp(join(tmpdir(), "sdb-sim-viewer-"));
   temporaryDirectories.push(root);
   const runDirectory = join(root, "run-fixture");
   await mkdir(runDirectory);
+  await mkdir(join(runDirectory, "replays"));
   await writeFile(join(runDirectory, "metadata.json"), JSON.stringify(metadata()));
   await writeFile(join(runDirectory, "summary.json"), JSON.stringify(summary()));
-  await writeFile(join(runDirectory, "games.jsonl"), `${records.map((record) => JSON.stringify(record)).join("\n")}\n`);
+  await Promise.all(records.map((record) => writeReplay(runDirectory, record)));
+  await writeFile(join(runDirectory, "games.jsonl"), `${records.map((record) => JSON.stringify(persistRecord(record))).join("\n")}\n`);
   return { root, runDirectory };
 };
 
@@ -300,6 +360,10 @@ describe("simulation data loading", () => {
 
     const game = await loadSimulationGame(root, "run-fixture", "game-000001");
     expect(game.status).toBe("completed");
+    expect(game.replay).toHaveLength(completedGameOne().replay.length);
+    expect(game.replay[0].snapshot.players).toBeDefined();
+    expect("replayFile" in game).toBe(false);
+    expect("replayFormat" in game).toBe(false);
   });
 
   it("rejects unsupported schemaVersion", async () => {
@@ -308,6 +372,17 @@ describe("simulation data loading", () => {
     const runs = await listSimulationRuns(root);
     expect(runs[0].schemaVersion).toBe("old");
     await expect(loadSimulationRun(root, "run-fixture")).rejects.toThrow(/unsupported schemaVersion/);
+  });
+
+  it("rejects unsupported replay schemaVersion", async () => {
+    const { runDirectory, root } = await writeRun();
+    const record = completedGameOne();
+    const replayLog = createReplayLog(record.gameId, record.gameSeed, record.replay, "old");
+    await writeFile(
+      join(runDirectory, "replays", `${record.gameId}.jsonl`),
+      `${[replayLog.header, ...replayLog.steps].map((entry) => JSON.stringify(entry)).join("\n")}\n`
+    );
+    await expect(loadSimulationGame(root, "run-fixture", record.gameId)).rejects.toThrow(/unsupported schemaVersion/);
   });
 
   it("reports missing files clearly", async () => {
@@ -336,7 +411,7 @@ describe("simulation data loading", () => {
 
 describe("simulation aggregation", () => {
   it("computes score, level, card, city, and area statistics from fixture records", () => {
-    const analysis = analyzeSimulationRun([completedGameOne(), completedGameTwo()], 2);
+    const analysis = analyzeSimulationRun([persistRecord(completedGameOne()), persistRecord(completedGameTwo())], 2);
     expect(analysis.score.averageFinalScore).toBe(15);
     expect(analysis.score.medianFinalScore).toBe(15);
     expect(analysis.score.winRateByPlayerIndex).toEqual({ "player-1": 0.5, "player-2": 0.5 });
