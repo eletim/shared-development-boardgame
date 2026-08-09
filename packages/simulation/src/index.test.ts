@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { describe, expect, it } from "vitest";
@@ -12,6 +12,8 @@ import { SeededRng } from "./rng";
 import { selectRandomAgentAction } from "./random-agent";
 import { simulateGame, simulateGames } from "./runner";
 import { writeSimulationRun } from "./output";
+import { createReplayLog, expandReplayLog } from "./replay-delta";
+import { simulationSchemaVersion, type ReplayStep } from "./types";
 
 const play = (state: GameState, action: GameAction): GameState => {
   const result = applyAction(state, action);
@@ -192,6 +194,80 @@ describe("headless runner", () => {
     expect(record.finalCityStacks.length).toBeGreaterThan(0);
     expect(record.replay.every((step) => step.snapshot.players && step.snapshot.areas)).toBe(true);
   });
+
+  it("restores replay snapshots exactly from initial snapshot and deltas", () => {
+    const record = simulateGame({ gameId: "delta", gameSeed: "delta", playerCount: 4 });
+    const replayLog = createReplayLog(record.gameId, record.gameSeed, record.replay, simulationSchemaVersion);
+    expect(expandReplayLog(replayLog.header, replayLog.steps)).toEqual(record.replay);
+  });
+
+  it("captures board, player, city, world, draft, and production changes in replay deltas", () => {
+    const first = simulateGame({ gameId: "coverage", gameSeed: "coverage", playerCount: 4 }).replay[0];
+    const secondSnapshot = structuredClone(first.snapshot);
+    secondSnapshot.round = 2;
+    secondSnapshot.worldLevel = 2;
+    secondSnapshot.nextWorldLevelThreshold = 30;
+    secondSnapshot.pendingWorldLevelBonus = { level: 2, playerId: "player-1", playerName: "Player 1" };
+    secondSnapshot.players[0].cubes.red += 1;
+    secondSnapshot.players[0].contribution += 3;
+    secondSnapshot.players[0].finalScore += 3;
+    secondSnapshot.players[0].handCards = [
+      {
+        instanceId: "red-1",
+        type: "red-production",
+        name: "赤の生産",
+        color: "red",
+        actionText: "",
+        scoringText: "",
+      },
+    ];
+    secondSnapshot.areas[0].cubes.red += 2;
+    secondSnapshot.areas[0].cubeTotal += 2;
+    secondSnapshot.areas[0].areaColor = "red";
+    secondSnapshot.areas[0].areaLevel = 1;
+    secondSnapshot.intersections[0].cityStack = [{ playerId: "player-1", playerColor: "#d73a31", level: 1 }];
+    secondSnapshot.draftPacks = [
+      [
+        {
+          instanceId: "blue-1",
+          type: "blue-production",
+          name: "青の生産",
+          color: "blue",
+          actionText: "",
+          scoringText: "",
+        },
+      ],
+    ];
+    secondSnapshot.turnEndProduction = { color: "red", additionalCubes: 2 };
+    secondSnapshot.turnEndDevelopment = {
+      type: "neutral-development",
+      maxPlacements: 2,
+      placementRule: "same-area",
+    };
+    secondSnapshot.lastProduction = [
+      {
+        playerId: "player-1",
+        playerName: "Player 1",
+        cubes: { red: 2, blue: 0, yellow: 0 },
+      },
+    ];
+    secondSnapshot.winners = [secondSnapshot.players[0]];
+
+    const replay: ReplayStep[] = [
+      first,
+      {
+        ...first,
+        step: 1,
+        eventType: "turn_end_development",
+        round: 2,
+        details: { placed: { areaId: secondSnapshot.areas[0].id, color: "red" } },
+        snapshot: secondSnapshot,
+      },
+    ];
+    const replayLog = createReplayLog("synthetic", "synthetic-seed", replay, simulationSchemaVersion);
+    expect(replayLog.steps[1].stateDelta.length).toBeGreaterThan(0);
+    expect(expandReplayLog(replayLog.header, replayLog.steps)).toEqual(replay);
+  });
 });
 
 describe("simulation output", () => {
@@ -215,7 +291,10 @@ describe("simulation output", () => {
     expect(gameLines).toHaveLength(2);
     expect(gameLines[0].gameSeed).toContain("output-seed:game-1");
     expect(gameLines[0].status).toBe("completed");
-    expect(gameLines[0].replay[0].snapshot.players).toBeDefined();
+    expect(gameLines[0].replay).toBeUndefined();
+    expect(gameLines[0].replayFile).toBe("replays/game-000001.jsonl");
+    expect(gameLines[0].replayStepCount).toBeGreaterThan(0);
+    await expect(stat(join(runDirectory, "replays", "game-000001.jsonl"))).resolves.toBeDefined();
     expect(summaryJson.completedGames).toBe(2);
     expect(summaryJson.failedGames).toBe(0);
   });

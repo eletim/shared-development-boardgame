@@ -8,7 +8,8 @@ import type {
   CardSummary,
 } from "@sdb/protocol";
 
-export const simulationSchemaVersion = "simulation-log-v1";
+export const simulationSchemaVersion = "simulation-log-v2";
+export const replayLogFormat = "initial-snapshot-delta-jsonl";
 
 export type AgentConfig = {
   type: "random";
@@ -45,6 +46,35 @@ export type ReplayStep = {
   snapshot: ReplaySnapshot;
 };
 
+export type ReplayDeltaPathPart = string | number;
+
+export type ReplaySnapshotDeltaOperation =
+  | { op: "add"; path: ReplayDeltaPathPart[]; value: unknown }
+  | { op: "remove"; path: ReplayDeltaPathPart[] }
+  | { op: "replace"; path: ReplayDeltaPathPart[]; value: unknown };
+
+export type ReplaySnapshotDelta = ReplaySnapshotDeltaOperation[];
+
+export type ReplayDeltaStep = Omit<ReplayStep, "snapshot"> & {
+  kind: "step";
+  stateDelta: ReplaySnapshotDelta;
+};
+
+export type ReplayLogHeader = {
+  schemaVersion: string;
+  kind: "replay";
+  format: typeof replayLogFormat;
+  gameId: string;
+  gameSeed: string;
+  initialSnapshot: ReplaySnapshot;
+};
+
+export type ReplayFileInfo = {
+  replayFormat: typeof replayLogFormat;
+  replayFile: string;
+  replayStepCount: number;
+};
+
 export type WorldLevelUnlockTiming = {
   level: 2 | 3;
   step: number;
@@ -66,11 +96,14 @@ export type RoundEndAreaStats = {
 export type GameStats = {
   worldLevelUnlocks: WorldLevelUnlockTiming[];
   draftedCards: Record<CardType, number>;
+  draftedCardsByPlayer: Record<CardType, Record<string, number>>;
   usedCards: Record<CardType, number>;
   cardUseModes: Record<CardUseMode, number>;
+  cardUseModesByType: Record<CardType, Record<CardUseMode, number>>;
   tricolorBonusCount: number;
   neutralDevelopmentBonusCount: number;
   neutralDevelopmentBonusCubes: CubeCounts;
+  neutralDevelopmentBonusCubeTotals: number[];
   cityBuildsByLevel: Record<1 | 2 | 3, number>;
   emptyIntersectionBuilds: number;
   stackedCityBuilds: number;
@@ -103,6 +136,8 @@ export type CompletedGameRecord = {
   replay: ReplayStep[];
 };
 
+export type PersistedCompletedGameRecord = Omit<CompletedGameRecord, "replay"> & ReplayFileInfo;
+
 export type FailedGameRecord = {
   schemaVersion: string;
   status: "failed";
@@ -118,6 +153,12 @@ export type FailedGameRecord = {
 };
 
 export type GameRecord = CompletedGameRecord | FailedGameRecord;
+
+export type PersistedFailedGameRecord = Omit<FailedGameRecord, "replay"> & ReplayFileInfo;
+
+export type PersistedGameRecord = PersistedCompletedGameRecord | PersistedFailedGameRecord;
+
+export type SimulationSummaryRecord = PersistedGameRecord | GameRecord;
 
 export type SimulationRunOptions = {
   games: number;
