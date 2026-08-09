@@ -343,6 +343,9 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "青" }));
     expect(await screen.findByText(/ターン終了時配置/)).toBeInTheDocument();
     expect(screen.getByTestId("intersection-intersection-01")).toHaveClass("selectable");
+
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    expect(screen.getByLabelText("交点")).toHaveValue("intersection-01");
   });
 
   it("does not allow board clicks for intersections omitted from server legal moves", async () => {
@@ -383,6 +386,13 @@ describe("App", () => {
     expect(await screen.findByTestId("intersection-intersection-02")).toHaveClass("selectable");
     await userEvent.click(screen.getByTestId("intersection-intersection-02"));
     expect(screen.getByLabelText("交点")).toHaveValue("intersection-02");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: afterFirstBuild }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "都市を建設" }));
+    expect(lastRequestBody(fetchMock)).toContain("intersection-02");
   });
 
   it("shows server-calculated turn-end production preview", async () => {
