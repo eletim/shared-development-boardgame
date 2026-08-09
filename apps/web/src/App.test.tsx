@@ -287,6 +287,60 @@ describe("App", () => {
     expect(screen.getByLabelText("交点")).toHaveValue("intersection-01");
   });
 
+  it("keeps server area colors visible while turn-end placement areas are selectable", async () => {
+    const placementState = baseState("action", true);
+    placementState.areas[0].cubes = { red: 1, blue: 0, yellow: 0 };
+    placementState.areas[0].cubeTotal = 1;
+    placementState.areas[0].areaLevel = 1;
+    placementState.areas[0].areaColor = "red";
+    placementState.boardCubeTotal = 1;
+    mockFetch([placementState]);
+    render(<App />);
+
+    expect(await screen.findByText("赤 Lv1 1/2")).toBeInTheDocument();
+    expect(screen.getByTestId("area-area-center")).toHaveClass("hex", "red", "selectable");
+  });
+
+  it("updates area color from the latest server state after a placement response", async () => {
+    const beforePlacement = baseState("action", true);
+    beforePlacement.areas[0].cubes = { red: 1, blue: 0, yellow: 0 };
+    beforePlacement.areas[0].cubeTotal = 1;
+    beforePlacement.areas[0].areaLevel = 1;
+    beforePlacement.areas[0].areaColor = "red";
+    beforePlacement.boardCubeTotal = 1;
+
+    const afterPlacement = baseState("action");
+    afterPlacement.currentPlayerId = "player-2";
+    afterPlacement.currentPlayerName = "B";
+    afterPlacement.areas[0].cubes = { red: 1, blue: 1, yellow: 0 };
+    afterPlacement.areas[0].cubeTotal = 2;
+    afterPlacement.areas[0].areaLevel = 1;
+    afterPlacement.areas[0].areaColor = "neutral";
+    afterPlacement.boardCubeTotal = 2;
+    afterPlacement.legal.placeableAreaIds = [];
+
+    const fetchMock = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({ state: beforePlacement }),
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<App />);
+
+    expect(await screen.findByText("赤 Lv1 1/2")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("色"), "blue");
+    await userEvent.selectOptions(screen.getByLabelText("エリア"), "area-center");
+
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ state: afterPlacement }),
+    });
+    await userEvent.click(screen.getByRole("button", { name: "1個置いて手番終了" }));
+
+    expect(await screen.findByText("中立 Lv1 2/2")).toBeInTheDocument();
+    expect(screen.getByTestId("area-area-center")).toHaveClass("neutral");
+    expect(screen.getByTestId("area-area-center")).not.toHaveClass("red");
+  });
+
   it("keeps board city-build clicks enabled after resolving a world level bonus", async () => {
     const pendingBonus = withBuildableIntersections(baseState("action", true), []);
     pendingBonus.worldLevel = 2;
@@ -422,6 +476,10 @@ describe("App", () => {
       areaLevel: 0,
       areaColor: "neutral",
     });
+    tricolorState.areas[0].cubes = { red: 0, blue: 0, yellow: 1 };
+    tricolorState.areas[0].cubeTotal = 1;
+    tricolorState.areas[0].areaLevel = 1;
+    tricolorState.areas[0].areaColor = "yellow";
     tricolorState.legal.placeableAreaIds = ["area-center", "area-east"];
 
     const fetchMock = vi.fn(async () => ({
@@ -431,8 +489,13 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "三色都市の開発" })).toBeInTheDocument();
+    const developmentHeading = await screen.findByRole("heading", { name: "三色都市の開発" });
+    const cityHeading = screen.getByRole("heading", { name: "都市建設" });
+    expect(cityHeading.compareDocumentPosition(developmentHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("黄 Lv1 1/2")).toBeInTheDocument();
+    expect(screen.getByTestId("area-area-center")).toHaveClass("yellow", "selectable");
     await userEvent.selectOptions(screen.getByLabelText("1個目 エリア"), "area-center");
+    expect(screen.getByTestId("area-area-center")).toHaveClass("yellow", "selected");
     await userEvent.selectOptions(screen.getByLabelText("2個目 色"), "blue");
     await userEvent.selectOptions(screen.getByLabelText("2個目 エリア"), "area-east");
     await userEvent.click(screen.getByRole("button", { name: "選択分を置いて手番終了" }));
@@ -468,10 +531,14 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    expect(await screen.findByRole("heading", { name: "中立開発" })).toBeInTheDocument();
+    const neutralHeading = await screen.findByRole("heading", { name: "中立開発" });
+    const cityHeading = screen.getByRole("heading", { name: "都市建設" });
+    expect(cityHeading.compareDocumentPosition(neutralHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     await userEvent.selectOptions(screen.getByLabelText("対象エリア"), "area-center");
+    expect(screen.getByText("現在色: 青 / 中立で解決される場合の任意色取得上限 2個")).toBeInTheDocument();
+    expect(screen.getByTestId("area-area-center")).toHaveClass("blue", "selectable", "selected");
     await userEvent.selectOptions(screen.getByLabelText("配置数"), "1");
-    expect(await screen.findByText(/任意色取得 2個/)).toBeInTheDocument();
+    expect(await screen.findByText(/任意色取得上限 2個/)).toBeInTheDocument();
     await userEvent.clear(screen.getByLabelText("赤取得"));
     await userEvent.type(screen.getByLabelText("赤取得"), "1");
     await userEvent.clear(screen.getByLabelText("青取得"));
