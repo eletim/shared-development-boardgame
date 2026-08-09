@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { SimulationViewer } from "./SimulationViewer";
@@ -32,7 +32,16 @@ const snapshot = (areaColor: "neutral" | "red", score: number, city = false) => 
       cityCount: city ? 1 : 0,
       contribution: score,
       finalScore: score,
-      handCards: [],
+      handCards: areaColor === "red" ? [] : [
+        {
+          instanceId: "hand-red-1",
+          type: "red-production",
+          name: "赤の生産",
+          color: "red",
+          actionText: "赤1個を得る",
+          scoringText: "赤エリアで得点",
+        },
+      ],
     },
     {
       id: "player-2",
@@ -252,32 +261,48 @@ describe("SimulationViewer", () => {
     expect(screen.getByRole("cell", { name: "game-000001" })).toBeInTheDocument();
   });
 
-  it("loads a game and moves replay steps using saved snapshots", async () => {
+  it("loads a game into the dedicated replay view and returns to the game list", async () => {
     mockViewerFetch();
     render(<SimulationViewer onBackToGame={() => {}} />);
 
     await userEvent.click(await screen.findByRole("button", { name: "開く" }));
     await userEvent.click(await screen.findByRole("button", { name: "Replay" }));
 
-    expect(await screen.findByText("step 0 / 1")).toBeInTheDocument();
+    expect(await screen.findByRole("main", { name: "Replay専用画面" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Replay" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Run概要" })).not.toBeInTheDocument();
+    expect(await screen.findByTestId("replay-step-readout")).toHaveTextContent("step 0 / 1");
     expect(screen.getByText("中立 Lv0 0/2")).toBeInTheDocument();
-    expect(screen.getByRole("table", { name: "プレイヤー状態" })).toHaveTextContent("player-1");
-    expect(screen.getByRole("table", { name: "プレイヤー状態" })).toHaveTextContent("赤1 青0 黄0");
+    expect(screen.getByRole("region", { name: "盤面" })).toBeInTheDocument();
+    expect(screen.getByRole("complementary", { name: "カード選択" })).toHaveTextContent("赤の生産");
+    expect(screen.getByRole("complementary", { name: "カード選択" })).toHaveTextContent("読み取り専用");
+    expect(screen.queryByRole("button", { name: "カードを使用" })).not.toBeInTheDocument();
+    expect(screen.getByText(/都市 0 · 貢献 0 · 最終 0 · 手札 1/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "1step進む" }));
-    expect(screen.getByText("step 1 / 1")).toBeInTheDocument();
+    expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 1 / 1");
     expect(screen.getByText("赤 Lv1 1/2")).toBeInTheDocument();
     expect(screen.getByText("player-1 Lv1")).toBeInTheDocument();
-    expect(within(screen.getByRole("table", { name: "プレイヤー状態" })).getByText("5")).toBeInTheDocument();
+    expect(screen.getByText(/都市 1 · 貢献 5 · 最終 5 · 手札 0/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "1step戻る" }));
-    expect(screen.getByText("step 0 / 1")).toBeInTheDocument();
+    expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 0 / 1");
     expect(screen.getByText("中立 Lv0 0/2")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "最後へ" }));
-    expect(screen.getByText("step 1 / 1")).toBeInTheDocument();
+    expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 1 / 1");
 
     await userEvent.click(screen.getByRole("button", { name: "先頭へ" }));
-    expect(screen.getByText("step 0 / 1")).toBeInTheDocument();
+    expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 0 / 1");
+
+    await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("125%");
+    await userEvent.click(screen.getByTestId("area-area-center"));
+    await userEvent.click(screen.getByTestId("intersection-intersection-01"));
+    expect(screen.queryByRole("button", { name: "都市を建設" })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Viewerへ戻る" }));
+    expect(await screen.findByRole("heading", { name: "Game一覧" })).toBeInTheDocument();
+    expect(screen.getByRole("cell", { name: "game-000001" })).toBeInTheDocument();
   });
 });

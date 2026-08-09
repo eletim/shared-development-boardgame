@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronsLeft, ChevronRight, ChevronsRight } from "lucide-react";
+import { ChevronLeft, ChevronsLeft, ChevronRight, ChevronsRight, X } from "lucide-react";
 import { cubeColors, type AreaColor, type CardType, type CardUseMode, type CubeColor } from "@sdb/protocol";
 import { type GameRecord, type ReplayStep, type SimulationMetadata, type SimulationSummary } from "@sdb/simulation";
 import { Board } from "./Board";
@@ -255,6 +255,7 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
   const [selectedGameId, setSelectedGameId] = useState("");
   const [selectedGame, setSelectedGame] = useState<GameRecord | null>(null);
   const [stepIndex, setStepIndex] = useState(0);
+  const [viewerMode, setViewerMode] = useState<"list" | "replay">("list");
   const [filter, setFilter] = useState("all");
   const [sort, setSort] = useState("gap-desc");
   const [error, setError] = useState("");
@@ -274,6 +275,7 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
       setSelectedGameId("");
       setSelectedGame(null);
       setStepIndex(0);
+      setViewerMode("list");
       const nextDetails = await apiJson<RunDetails>(`/api/simulations/runs/${encodeURIComponent(runId)}`);
       setDetails(nextDetails);
       setError("");
@@ -290,6 +292,7 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
       setSelectedGameId(gameId);
       setSelectedGame(game);
       setStepIndex(0);
+      setViewerMode("replay");
       setError("");
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : String(loadError));
@@ -310,6 +313,122 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
 
   const replay = selectedGame?.replay ?? [];
   const currentStep = replay[Math.min(stepIndex, Math.max(0, replay.length - 1))] ?? null;
+
+  if (viewerMode === "replay" && currentStep && selectedGame) {
+    const currentSnapshot = currentStep.snapshot;
+    const replayCurrentPlayer =
+      currentSnapshot.players.find((player) => player.id === currentSnapshot.currentPlayerId) ?? null;
+    const usedCardId = currentStep.action?.type === "USE_CARD" ? currentStep.action.cardInstanceId : "";
+    const stepTotal = Math.max(0, replay.length - 1);
+
+    return (
+      <main className="app-shell replay-view" aria-label="Replay専用画面">
+        <header className="topbar replay-topbar">
+          <div>
+            <h1>Replay</h1>
+            <p>
+              {selectedGame.gameId} · seed {selectedGame.gameSeed} · Round {currentSnapshot.round} / {currentSnapshot.maxRounds} ·{" "}
+              {currentSnapshot.phase === "draft" ? "ドラフト" : currentSnapshot.phase === "action" ? "アクション" : "終了"} ·
+              世界Lv {currentSnapshot.worldLevel} · 最大都市Lv {currentSnapshot.cityLevel}
+            </p>
+            <p data-testid="replay-step-readout">step {currentStep.step} / {stepTotal} · event {currentStep.eventType}</p>
+          </div>
+          <div className="turn-block">
+            <span>acting / current</span>
+            <strong>{currentStep.playerId ?? "system"} / {currentSnapshot.currentPlayerName ?? "終了"}</strong>
+          </div>
+          <div className="icon-actions replay-step-actions" aria-label="Replay step操作">
+            <button aria-label="先頭へ" onClick={() => setStepIndex(0)} disabled={stepIndex === 0}><ChevronsLeft size={18} /></button>
+            <button aria-label="1step戻る" onClick={() => setStepIndex((current) => Math.max(0, current - 1))} disabled={stepIndex === 0}><ChevronLeft size={18} /></button>
+            <button aria-label="1step進む" onClick={() => setStepIndex((current) => Math.min(replay.length - 1, current + 1))} disabled={stepIndex >= replay.length - 1}><ChevronRight size={18} /></button>
+            <button aria-label="最後へ" onClick={() => setStepIndex(replay.length - 1)} disabled={stepIndex >= replay.length - 1}><ChevronsRight size={18} /></button>
+            <button aria-label="Viewerへ戻る" onClick={() => setViewerMode("list")}><X size={18} /></button>
+          </div>
+        </header>
+
+        <section className="player-strip" aria-label="プレイヤー">
+          {currentSnapshot.players.map((player) => (
+            <article
+              key={player.id}
+              className={`player-card ${player.id === currentSnapshot.currentPlayerId ? "active" : ""}`}
+              style={{ borderTopColor: player.color }}
+            >
+              <div className="player-name">
+                <span style={{ backgroundColor: player.color }} />
+                <strong>{player.name}</strong>
+              </div>
+              <div className="cube-row">
+                {cubeColors.map((color) => (
+                  <span key={color} className={`cube-pill ${color}`}>
+                    {colorLabels[color]} {player.cubes[color]}
+                  </span>
+                ))}
+              </div>
+              <p>
+                都市 {player.cityCount} · 貢献 {player.contribution} · 最終 {player.finalScore} · 手札 {player.handCards.length}
+              </p>
+            </article>
+          ))}
+        </section>
+
+        <section className="workspace replay-workspace">
+          <aside className="card-panel" aria-label="カード選択">
+            <section className="actions card-actions">
+              <h2>現在プレイヤーの手札</h2>
+              <p className="hint">Replayは読み取り専用です。カードを選択してもActionは送信されません。</p>
+              <div className="card-list readonly-card-list">
+                {replayCurrentPlayer?.handCards.length ? (
+                  replayCurrentPlayer.handCards.map((card) => (
+                    <article
+                      key={card.instanceId}
+                      className={`selected-card readonly-card ${card.instanceId === usedCardId ? "highlight" : ""}`}
+                    >
+                      <strong>{card.name}</strong>
+                      <span>{card.actionText}</span>
+                      <span>{card.scoringText}</span>
+                    </article>
+                  ))
+                ) : (
+                  <p className="hint">表示できる手札カードがありません。</p>
+                )}
+              </div>
+            </section>
+          </aside>
+
+          <aside className="operations-panel" aria-label="都市建設・エリア開発">
+            <EventDetails step={currentStep} />
+          </aside>
+
+          <Board state={currentSnapshot} interactive={false} />
+
+          <aside className="right-panel">
+            <section className="history">
+              <h2>Replay状態</h2>
+              <MetricGrid>
+                <Metric label="世界Lv" value={currentSnapshot.worldLevel} />
+                <Metric label="盤面キューブ" value={currentSnapshot.boardCubeTotal} />
+                <Metric label="最高貢献" value={currentSnapshot.highestContribution} />
+                <Metric label="次の解禁" value={currentSnapshot.nextWorldLevelThreshold ? `${currentSnapshot.nextWorldLevelThreshold}点` : "なし"} />
+              </MetricGrid>
+              <table>
+                <caption>都市スタック</caption>
+                <thead><tr><th>交点</th><th>都市所有者</th></tr></thead>
+                <tbody>
+                  {currentSnapshot.intersections.filter((intersection) => intersection.cityStack.length > 0).map((intersection) => (
+                    <tr key={intersection.id}>
+                      <td>{intersection.id}</td>
+                      <td>{intersection.cityStack.map((city) => `${city.playerId} Lv${city.level}`).join(" / ")}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {currentSnapshot.intersections.every((intersection) => intersection.cityStack.length === 0) ? <p className="hint">都市なし</p> : null}
+            </section>
+          </aside>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="viewer-shell">
@@ -515,59 +634,6 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
             </table>
           </section>
         </>
-      ) : null}
-
-      {currentStep ? (
-        <section className="replay-shell" aria-label="個別ゲーム再生Viewer">
-          <div className="replay-header">
-            <div>
-              <h2>Replay {selectedGame?.gameId}</h2>
-              <p>step {currentStep.step} / {replay.length - 1}</p>
-            </div>
-            <div className="icon-actions">
-              <button aria-label="先頭へ" onClick={() => setStepIndex(0)} disabled={stepIndex === 0}><ChevronsLeft size={18} /></button>
-              <button aria-label="1step戻る" onClick={() => setStepIndex((current) => Math.max(0, current - 1))} disabled={stepIndex === 0}><ChevronLeft size={18} /></button>
-              <button aria-label="1step進む" onClick={() => setStepIndex((current) => Math.min(replay.length - 1, current + 1))} disabled={stepIndex >= replay.length - 1}><ChevronRight size={18} /></button>
-              <button aria-label="最後へ" onClick={() => setStepIndex(replay.length - 1)} disabled={stepIndex >= replay.length - 1}><ChevronsRight size={18} /></button>
-            </div>
-          </div>
-          <div className="replay-grid">
-            <Board state={currentStep.snapshot} interactive={false} />
-            <aside className="replay-side">
-              <MetricGrid>
-                <Metric label="世界Lv" value={currentStep.snapshot.worldLevel} />
-                <Metric label="round / phase" value={`${currentStep.snapshot.round} / ${currentStep.snapshot.phase}`} />
-                <Metric label="盤面キューブ" value={currentStep.snapshot.boardCubeTotal} />
-              </MetricGrid>
-              <table>
-                <caption>プレイヤー状態</caption>
-                <thead><tr><th>player</th><th>得点</th><th>手持ちキューブ</th></tr></thead>
-                <tbody>
-                  {currentStep.snapshot.players.map((player) => (
-                    <tr key={player.id}>
-                      <td>{player.id}</td>
-                      <td>{player.finalScore}</td>
-                      <td>{cubeColors.map((color) => `${colorLabels[color]}${player.cubes[color]}`).join(" ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <table>
-                <caption>都市スタック</caption>
-                <thead><tr><th>交点</th><th>都市所有者</th></tr></thead>
-                <tbody>
-                  {currentStep.snapshot.intersections.filter((intersection) => intersection.cityStack.length > 0).map((intersection) => (
-                    <tr key={intersection.id}>
-                      <td>{intersection.id}</td>
-                      <td>{intersection.cityStack.map((city) => `${city.playerId} Lv${city.level}`).join(" / ")}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              <EventDetails step={currentStep} />
-            </aside>
-          </div>
-        </section>
       ) : null}
     </main>
   );

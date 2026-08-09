@@ -541,8 +541,7 @@ select {
 }
 
 .viewer-topbar,
-.viewer-section,
-.replay-shell {
+.viewer-section {
   background: #ffffff;
   border: 1px solid #d8d9d0;
   border-radius: 8px;
@@ -558,13 +557,11 @@ select {
 
 .viewer-topbar h1,
 .viewer-section h2,
-.viewer-section h3,
-.replay-header h2 {
+.viewer-section h3 {
   margin: 0;
 }
 
-.viewer-topbar p,
-.replay-header p {
+.viewer-topbar p {
   margin: 4px 0 0;
   color: #5b5f56;
 }
@@ -683,29 +680,34 @@ th {
   min-width: 180px;
 }
 
-.replay-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 10px;
+.replay-view {
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
-.replay-grid {
-  display: grid;
-  grid-template-columns: minmax(520px, 1fr) minmax(320px, 430px);
-  gap: 12px;
-  align-items: start;
+.replay-topbar {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
-.replay-grid .board-panel {
-  min-height: 520px;
-  height: 66vh;
+.replay-step-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
-.replay-side {
-  display: grid;
-  gap: 10px;
+.replay-workspace .board-panel {
+  height: min(70vh, 700px);
+}
+
+.readonly-card {
+  cursor: default;
+}
+
+.readonly-card.highlight {
+  border-color: #24563b;
+  box-shadow: inset 4px 0 0 #24563b;
+}
+
+.readonly-card-list .hint {
+  margin: 0;
 }
 
 .event-list {
@@ -750,9 +752,6 @@ details pre {
     grid-template-columns: 1fr;
   }
 
-  .replay-grid {
-    grid-template-columns: 1fr;
-  }
 }
 
 @media (max-width: 760px) {
