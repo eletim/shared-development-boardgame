@@ -148,10 +148,6 @@ export const App = () => {
       } / 現在最高: ${state.highestContribution}点`
     : "";
 
-  if (viewMode === "simulation") {
-    return <SimulationViewer onBackToGame={() => setViewMode("game")} />;
-  }
-
   const applyResponse = (data: GameResponse) => {
     if (data.state !== undefined) setState(data.state);
     setError(data.error ?? "");
@@ -266,6 +262,10 @@ export const App = () => {
     if (neutralAdjacentCityPieces > 0 || neutralBonusTotal === 0) return;
     setNeutralBonusCubes(emptyCubeCounts());
   }, [neutralAdjacentCityPieces, neutralBonusTotal]);
+
+  if (viewMode === "simulation") {
+    return <SimulationViewer onBackToGame={() => setViewMode("game")} />;
+  }
 
   if (!state) {
     return (
