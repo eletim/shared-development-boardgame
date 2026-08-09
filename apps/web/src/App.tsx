@@ -12,8 +12,6 @@ import {
   type PublicGameState,
 } from "@sdb/protocol";
 
-type BoardMode = "placement" | "build" | "none";
-
 const colorLabels: Record<CubeColor, string> = {
   red: "赤",
   blue: "青",
@@ -469,7 +467,6 @@ export const App = () => {
 
         <Board
           state={state}
-          mode={state.turnCardUsed ? "placement" : "build"}
           selectedAreaId={endPlacementAreaId}
           selectedIntersectionId={buildIntersectionId}
           placeableAreaIds={placeableAreaIds}
@@ -507,7 +504,6 @@ export const App = () => {
 
 const Board = ({
   state,
-  mode,
   selectedAreaId,
   selectedIntersectionId,
   placeableAreaIds,
@@ -515,7 +511,6 @@ const Board = ({
   onIntersectionSelect,
 }: {
   state: PublicGameState;
-  mode: BoardMode;
   selectedAreaId: string;
   selectedIntersectionId: string;
   placeableAreaIds: string[];
@@ -538,7 +533,7 @@ const Board = ({
             return `${area.x + 86 * Math.cos(angle)},${area.y + 86 * Math.sin(angle)}`;
           }).join(" ");
           const selectable =
-            state.status === "active" && mode === "placement" && placeableAreaIds.includes(area.id);
+            state.status === "active" && placeableAreaIds.includes(area.id);
           return (
             <g key={area.id}>
               <polygon
@@ -566,13 +561,14 @@ const Board = ({
         {state.intersections.map((intersection) => {
           const legalBuild = state.legal.buildableIntersectionIds.includes(intersection.id);
           const selectable =
-            state.status === "active" && mode === "build" && legalBuild;
+            state.status === "active" && legalBuild;
           const stackLabel = intersection.cityStack.length
             ? intersection.cityStack.map((city) => `Lv${city.level}`).join(" / ")
             : "空";
           return (
             <g
               key={intersection.id}
+              data-testid={`intersection-${intersection.id}`}
               className={`intersection ${selectable ? "selectable" : ""} ${selectedIntersectionId === intersection.id ? "selected" : ""}`}
               onClick={() => selectable && onIntersectionSelect(intersection.id)}
             >

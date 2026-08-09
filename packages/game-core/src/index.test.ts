@@ -797,6 +797,51 @@ describe("city rules and production", () => {
     expect(state.currentPlayerIndex).toBe(1);
   });
 
+  it("keeps city build legal moves available after a scoring card while the turn continues", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
+    const cardId = prepareOnePointScoringCard(state);
+    const cityId = emptyIntersectionIds(state, 1)[0];
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+
+    expect(state.turnCardUsed).toBe(true);
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(toPublicState(state).legal.buildableIntersectionIds).toContain(cityId);
+
+    state = play(state, { type: "BUILD_CITY", playerId: "player-1", intersectionId: cityId });
+    expect(state.intersections.find((intersection) => intersection.id === cityId)?.cityStack[0]?.playerId).toBe("player-1");
+  });
+
+  it("restores city build legal moves after a world level bonus is claimed", () => {
+    let state = draftAll(createInitialState(["A", "B"]));
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 1 };
+    state.players[0].contribution = 14;
+    const cardId = prepareOnePointScoringCard(state);
+    const cityId = emptyIntersectionIds(state, 1)[0];
+
+    state = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: cardId,
+      mode: "scoring",
+    });
+
+    expect(state.pendingWorldLevelBonuses).toEqual([{ level: 2, playerId: "player-1" }]);
+    expect(toPublicState(state).legal.buildableIntersectionIds).toEqual([]);
+
+    state = claimBonus(state, "red");
+
+    expect(state.turnCardUsed).toBe(true);
+    expect(state.pendingWorldLevelBonuses).toHaveLength(0);
+    expect(toPublicState(state).legal.buildableIntersectionIds).toContain(cityId);
+  });
+
   it("stacks cities on own and other players' cities without changing lower levels or owners", () => {
     let state = draftAll(createInitialState(["A", "B"]));
     const cityId = emptyIntersectionIds(state, 1)[0];
