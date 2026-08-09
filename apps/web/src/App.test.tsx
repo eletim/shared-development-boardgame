@@ -203,6 +203,46 @@ describe("App", () => {
     expect(screen.queryByText("B なし")).not.toBeInTheDocument();
   });
 
+  it("zooms only the board between the configured minimum and maximum", async () => {
+    mockFetch([baseState("action", true)]);
+    render(<App />);
+
+    const boardSvg = await screen.findByTestId("board-svg");
+    const cardPanel = screen.getByRole("complementary", { name: "カード選択" });
+    const operationsPanel = screen.getByRole("complementary", { name: "都市建設・エリア開発" });
+    const zoomOut = screen.getByRole("button", { name: "盤面を縮小" });
+    const zoomReset = screen.getByRole("button", { name: "盤面を100%に戻す" });
+    const zoomIn = screen.getByRole("button", { name: "盤面を拡大" });
+
+    expect(zoomOut).toHaveTextContent("-");
+    expect(zoomIn).toHaveTextContent("+");
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("100%");
+    expect(boardSvg).toHaveStyle({ width: "100%", height: "100%" });
+    expect(cardPanel).not.toHaveAttribute("style");
+    expect(operationsPanel).not.toHaveAttribute("style");
+
+    await userEvent.click(zoomIn);
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("125%");
+    expect(boardSvg).toHaveStyle({ width: "125%", height: "125%" });
+    expect(cardPanel).not.toHaveAttribute("style");
+    expect(operationsPanel).not.toHaveAttribute("style");
+
+    await userEvent.click(zoomIn);
+    await userEvent.click(zoomIn);
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("150%");
+    expect(boardSvg).toHaveStyle({ width: "150%", height: "150%" });
+    expect(zoomIn).toBeDisabled();
+
+    await userEvent.click(zoomReset);
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("100%");
+
+    await userEvent.click(zoomOut);
+    await userEvent.click(zoomOut);
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("75%");
+    expect(boardSvg).toHaveStyle({ width: "75%", height: "75%" });
+    expect(zoomOut).toBeDisabled();
+  });
+
   it("sends draft, card use, and build actions from the controls", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
@@ -265,6 +305,8 @@ describe("App", () => {
     render(<App />);
     await screen.findByRole("heading", { name: "都市建設" });
 
+    await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
+    expect(screen.getByTestId("board-zoom-readout")).toHaveTextContent("125%");
     expect(screen.getByTestId("intersection-intersection-01")).toHaveClass("selectable");
     expect(screen.getByTestId("intersection-intersection-02")).not.toHaveClass("selectable");
 
@@ -338,7 +380,11 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("赤 Lv1 1/2")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
+    await userEvent.click(screen.getByTestId("area-area-center"));
+    expect(screen.getByLabelText("エリア")).toHaveValue("area-center");
     expect(screen.getByTestId("area-area-center")).toHaveClass("hex", "red", "selectable");
+    expect(screen.getByTestId("area-area-center")).toHaveClass("selected");
   });
 
   it("updates area color from the latest server state after a placement response", async () => {
@@ -534,7 +580,9 @@ describe("App", () => {
     expect(cityHeading.compareDocumentPosition(developmentHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("黄 Lv1 1/2")).toBeInTheDocument();
     expect(screen.getByTestId("area-area-center")).toHaveClass("yellow", "selectable");
-    await userEvent.selectOptions(screen.getByLabelText("1個目 エリア"), "area-center");
+    await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
+    await userEvent.click(screen.getByTestId("area-area-center"));
+    expect(screen.getByLabelText("1個目 エリア")).toHaveValue("area-center");
     expect(screen.getByTestId("area-area-center")).toHaveClass("yellow", "selected");
     await userEvent.selectOptions(screen.getByLabelText("2個目 色"), "blue");
     await userEvent.selectOptions(screen.getByLabelText("2個目 エリア"), "area-east");
@@ -574,7 +622,9 @@ describe("App", () => {
     const neutralHeading = await screen.findByRole("heading", { name: "中立開発" });
     const cityHeading = screen.getByRole("heading", { name: "都市建設" });
     expect(cityHeading.compareDocumentPosition(neutralHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    await userEvent.selectOptions(screen.getByLabelText("対象エリア"), "area-center");
+    await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
+    await userEvent.click(screen.getByTestId("area-area-center"));
+    expect(screen.getByLabelText("対象エリア")).toHaveValue("area-center");
     expect(screen.getByText("現在色: 青 / 中立で解決される場合の任意色取得上限 2個")).toBeInTheDocument();
     expect(screen.getByTestId("area-area-center")).toHaveClass("blue", "selectable", "selected");
     await userEvent.selectOptions(screen.getByLabelText("配置数"), "1");
