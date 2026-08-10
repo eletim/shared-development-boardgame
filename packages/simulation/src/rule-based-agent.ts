@@ -1,11 +1,12 @@
 import {
+  toPublicState,
   getAreaColor,
   type AreaState,
   type CubeCounts,
   type GameState,
 } from "@sdb/game-core";
 import { cubeColors, type GameAction } from "@sdb/protocol";
-import { enumerateLegalActionResults } from "./legal-actions";
+import { endTurnActionResults, enumerateLegalActionResults } from "./legal-actions";
 import { SeededRng } from "./rng";
 import type { AgentConfig } from "./types";
 
@@ -121,6 +122,120 @@ export const scoreRuleBasedAction = (
     contributionScore;
 };
 
+const cardContinuationMaxDepth = 8;
+
+type CardEvaluationTerminalState = {
+  state: GameState;
+  actions: GameAction[];
+};
+
+const isCardEvaluationTerminal = (
+  beforeCardUse: GameState,
+  current: GameState,
+  actingPlayerId: string
+): boolean => {
+  if (current.status === "ended") return true;
+  if (current.round !== beforeCardUse.round) return true;
+  return current.players[current.currentPlayerIndex]?.id !== actingPlayerId;
+};
+
+const claimWorldLevelBonusActionResults = (state: GameState) => {
+  const player = state.players[state.currentPlayerIndex];
+  const results = enumerateLegalActionResults(state);
+  return cubeColors.flatMap((color) => {
+    const result = results.find(
+      (candidate) =>
+        candidate.action.type === "CLAIM_WORLD_LEVEL_BONUS" &&
+        candidate.action.playerId === player.id &&
+        candidate.action.color === color
+    );
+    return result ? [result] : [];
+  });
+};
+
+export const cardEvaluationTerminalStates = (
+  beforeCardUse: GameState,
+  afterCardUse: GameState,
+  actingPlayerId: string,
+  depth = 0,
+  actions: GameAction[] = []
+): CardEvaluationTerminalState[] => {
+  if (isCardEvaluationTerminal(beforeCardUse, afterCardUse, actingPlayerId)) {
+    return [{ state: afterCardUse, actions }];
+  }
+
+  if (depth >= cardContinuationMaxDepth) return [{ state: afterCardUse, actions }];
+
+  const legal = toPublicState(afterCardUse).legal;
+  const continuationResults = legal.canClaimWorldLevelBonus
+    ? claimWorldLevelBonusActionResults(afterCardUse)
+    : legal.canEndTurn
+      ? endTurnActionResults(afterCardUse)
+      : [];
+
+  if (continuationResults.length === 0) return [{ state: afterCardUse, actions }];
+
+  return continuationResults.flatMap((result) =>
+    cardEvaluationTerminalStates(
+      beforeCardUse,
+      result.state,
+      actingPlayerId,
+      depth + 1,
+      [...actions, result.action]
+    )
+  );
+};
+
+const cardEvaluationStateKey = (state: GameState): string =>
+  JSON.stringify({
+    status: state.status,
+    phase: state.phase,
+    round: state.round,
+    maxRounds: state.maxRounds,
+    worldLevel: state.worldLevel,
+    worldLevelUnlocks: state.worldLevelUnlocks,
+    pendingWorldLevelBonuses: state.pendingWorldLevelBonuses,
+    currentPlayerIndex: state.currentPlayerIndex,
+    turnCardUsed: state.turnCardUsed,
+    turnEndProductionColor: state.turnEndProductionColor,
+    turnEndSpecialDevelopment: state.turnEndSpecialDevelopment,
+    players: state.players.map((player) => ({
+      id: player.id,
+      cubes: player.cubes,
+      contribution: player.contribution,
+      handCardCount: player.handCards.length,
+    })),
+    areas: state.areas.map((area) => ({ id: area.id, cubes: area.cubes })),
+    intersections: state.intersections.map((intersection) => ({
+      id: intersection.id,
+      cityStack: intersection.cityStack,
+    })),
+  });
+
+const scoreRuleBasedCandidate = (
+  before: GameState,
+  after: GameState,
+  action: GameAction,
+  cardScoreCache?: Map<string, number>
+): number => {
+  if (action.type !== "USE_CARD") {
+    return scoreRuleBasedAction(before, after, action.playerId, action);
+  }
+
+  const cacheKey = cardEvaluationStateKey(after);
+  const cachedScore = cardScoreCache?.get(cacheKey);
+  if (cachedScore !== undefined) return cachedScore;
+
+  const terminalStates = cardEvaluationTerminalStates(before, after, action.playerId);
+  const score = terminalStates.reduce(
+    (best, terminal) =>
+      Math.max(best, scoreRuleBasedAction(before, terminal.state, action.playerId, action)),
+    Number.NEGATIVE_INFINITY
+  );
+  cardScoreCache?.set(cacheKey, score);
+  return score;
+};
+
 export const selectRuleBasedAgentAction = (
   state: GameState,
   rng: SeededRng
@@ -130,8 +245,9 @@ export const selectRuleBasedAgentAction = (
 
   let bestScore = Number.NEGATIVE_INFINITY;
   let bestActions: GameAction[] = [];
+  const cardScoreCache = new Map<string, number>();
   for (const { action, state: after } of results) {
-    const score = scoreRuleBasedAction(state, after, action.playerId, action);
+    const score = scoreRuleBasedCandidate(state, after, action, cardScoreCache);
     if (score > bestScore) {
       bestScore = score;
       bestActions = [action];

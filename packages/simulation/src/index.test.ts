@@ -10,7 +10,12 @@ import {
 import { type CardType, type GameAction } from "@sdb/protocol";
 import { SeededRng } from "./rng";
 import { selectRandomAgentAction } from "./random-agent";
-import { selectRuleBasedAgentAction, scoreCubeCount, scoreRuleBasedAction } from "./rule-based-agent";
+import {
+  cardEvaluationTerminalStates,
+  selectRuleBasedAgentAction,
+  scoreCubeCount,
+  scoreRuleBasedAction,
+} from "./rule-based-agent";
 import { createAgents, simulateGame, simulateGames } from "./runner";
 import { writeSimulationRun } from "./output";
 import { createReplayLog, expandReplayLog } from "./replay-delta";
@@ -235,7 +240,7 @@ describe("rule-based agent", () => {
     );
     expect(intersection).toBeDefined();
     intersection!.cityStack.push({ playerId: "player-1" });
-    state.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+    state.areas.find((area) => area.id === "area-center")!.cubes.red = 5;
 
     const action = expectRuleBasedActionIsLegal(state, "max-score");
     expect(action).toMatchObject({
@@ -243,6 +248,141 @@ describe("rule-based agent", () => {
       playerId: "player-1",
       mode: "scoring",
     });
+  });
+
+  it("evaluates basic color production after delayed turn-end production", () => {
+    const state = actionStateWithCard("red-production");
+    state.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+
+    const action = expectRuleBasedActionIsLegal(state, "delayed-production");
+    expect(action).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "production",
+    });
+  });
+
+  it("evaluates tricolor-city special development and bonus at turn end", () => {
+    const state = actionStateWithCard("tricolor-city");
+    const intersection = state.intersections.find(
+      (candidate) => candidate.adjacentAreaIds.length === 3
+    );
+    expect(intersection).toBeDefined();
+    const [redAreaId, blueAreaId, yellowAreaId] = intersection!.adjacentAreaIds;
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 0 };
+    state.areas.find((area) => area.id === yellowAreaId)!.cubes.yellow = 1;
+    intersection!.cityStack.push({ playerId: "player-1" });
+
+    const action = expectRuleBasedActionIsLegal(state, "tricolor-turn-end");
+    expect(action).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "production",
+    });
+
+    const afterUse = play(state, action);
+    const terminalStates = cardEvaluationTerminalStates(state, afterUse, "player-1");
+    expect(
+      terminalStates.some((terminal) => {
+        const player = terminal.state.players.find((candidate) => candidate.id === "player-1");
+        const redArea = terminal.state.areas.find((area) => area.id === redAreaId);
+        const blueArea = terminal.state.areas.find((area) => area.id === blueAreaId);
+        return (
+          player !== undefined &&
+          player.cubes.red >= 1 &&
+          player.cubes.blue >= 1 &&
+          player.cubes.yellow >= 1 &&
+          redArea?.cubes.red === 1 &&
+          blueArea?.cubes.blue === 1
+        );
+      })
+    ).toBe(true);
+  });
+
+  it("evaluates neutral-development coloring and arbitrary color bonus at turn end", () => {
+    const coloringState = actionStateWithCard("neutral-development");
+    const centerCity = coloringState.intersections.find((intersection) =>
+      intersection.adjacentAreaIds.includes("area-center")
+    );
+    expect(centerCity).toBeDefined();
+    coloringState.players[0].cubes = { red: 2, blue: 0, yellow: 0 };
+    centerCity!.cityStack.push({ playerId: "player-1" });
+    const coloringCard = coloringState.players[0].handCards[0];
+    const afterColoringUse = play(coloringState, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: coloringCard.instanceId,
+      mode: "production",
+    });
+    const coloringTerminals = cardEvaluationTerminalStates(
+      coloringState,
+      afterColoringUse,
+      "player-1"
+    );
+    expect(
+      coloringTerminals.some((terminal) => {
+        const center = terminal.state.areas.find((area) => area.id === "area-center");
+        return (
+          center?.cubes.red === 2 &&
+          scoreRuleBasedAction(coloringState, terminal.state, "player-1", {
+            type: "USE_CARD",
+            playerId: "player-1",
+            cardInstanceId: coloringCard.instanceId,
+            mode: "production",
+          }) > 0
+        );
+      })
+    ).toBe(true);
+
+    const bonusState = actionStateWithCard("neutral-development");
+    bonusState.areas.find((area) => area.id === "area-center")!.cubes = {
+      red: 1,
+      blue: 1,
+      yellow: 0,
+    };
+    for (const intersection of bonusState.intersections.filter((candidate) =>
+      candidate.adjacentAreaIds.includes("area-center")
+    ).slice(0, 3)) {
+      intersection.cityStack.push({ playerId: "player-2" });
+    }
+
+    const bonusAction = expectRuleBasedActionIsLegal(bonusState, "neutral-bonus");
+    expect(bonusAction).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "production",
+    });
+
+    const afterUse = play(bonusState, bonusAction);
+    const terminalStates = cardEvaluationTerminalStates(bonusState, afterUse, "player-1");
+    expect(
+      terminalStates.some((terminal) => {
+        const player = terminal.state.players.find((candidate) => candidate.id === "player-1");
+        return player !== undefined && player.cubes.red + player.cubes.blue + player.cubes.yellow >= 3;
+      })
+    ).toBe(true);
+  });
+
+  it("does not include optional city builds in card evaluation continuations", () => {
+    const state = actionStateWithCard("red-production");
+    state.players[0].cubes = { red: 0, blue: 1, yellow: 1 };
+    state.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+    const card = state.players[0].handCards[0];
+    const afterUse = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: card.instanceId,
+      mode: "production",
+    });
+    expect(afterUse.players[0].cubes).toEqual({ red: 1, blue: 1, yellow: 1 });
+
+    const terminalStates = cardEvaluationTerminalStates(state, afterUse, "player-1");
+    expect(terminalStates.length).toBeGreaterThan(0);
+    expect(
+      terminalStates.every((terminal) =>
+        terminal.actions.every((action) => action.type !== "BUILD_CITY")
+      )
+    ).toBe(true);
   });
 
   it("uses seeded RNG only for ties", () => {
