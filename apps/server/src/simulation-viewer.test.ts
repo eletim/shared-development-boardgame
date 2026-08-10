@@ -276,6 +276,7 @@ const metadata = (): SimulationMetadata => ({
   failedGames: 0,
   playerCount: 2,
   runSeed: "fixture-seed",
+  agent: "random",
   agents: {
     "player-1": { type: "random", name: "Random 1" },
     "player-2": { type: "random", name: "Random 2" },
