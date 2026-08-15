@@ -547,6 +547,10 @@ select {
   padding: 0;
 }
 
+.board-toolbar button[aria-label="盤面を100%に戻す"] {
+  width: 52px;
+}
+
 .board-toolbar span {
   min-width: 48px;
   text-align: center;
