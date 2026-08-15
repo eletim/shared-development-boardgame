@@ -10,7 +10,13 @@ import {
 import { type CardType, type GameAction } from "@sdb/protocol";
 import { SeededRng } from "./rng";
 import { selectRandomAgentAction } from "./random-agent";
-import { simulateGame, simulateGames } from "./runner";
+import {
+  cardEvaluationTerminalStates,
+  selectRuleBasedAgentAction,
+  scoreCubeCount,
+  scoreRuleBasedAction,
+} from "./rule-based-agent";
+import { createAgents, simulateGame, simulateGames } from "./runner";
 import { writeSimulationRun } from "./output";
 import { createReplayLog, expandReplayLog } from "./replay-delta";
 import { simulationSchemaVersion, type ReplayStep } from "./types";
@@ -49,6 +55,20 @@ const expectSelectedActionIsLegal = (state: GameState, seed: string): GameAction
   expect(result.ok).toBe(true);
   return action!;
 };
+
+const expectRuleBasedActionIsLegal = (state: GameState, seed: string): GameAction => {
+  const action = selectRuleBasedAgentAction(state, new SeededRng(seed));
+  expect(action).not.toBeNull();
+  const result = applyAction(state, action!);
+  expect(result.ok).toBe(true);
+  return action!;
+};
+
+const scoreDelta = (before: GameState, after: GameState): number =>
+  scoreRuleBasedAction(before, after, before.players[0].id, {
+    type: "END_TURN",
+    playerId: before.players[0].id,
+  });
 
 describe("seeded RNG", () => {
   it("returns the same sequence for the same seed", () => {
@@ -136,6 +156,263 @@ describe("random agent", () => {
   });
 });
 
+describe("rule-based agent", () => {
+  it("scores cube marginal values as 10, 7, 4, then 2", () => {
+    expect(scoreCubeCount(1) - scoreCubeCount(0)).toBe(10);
+    expect(scoreCubeCount(2) - scoreCubeCount(1)).toBe(7);
+    expect(scoreCubeCount(3) - scoreCubeCount(2)).toBe(4);
+    expect(scoreCubeCount(4) - scoreCubeCount(3)).toBe(2);
+    expect(scoreCubeCount(5) - scoreCubeCount(4)).toBe(2);
+  });
+
+  it("scores cube gains and spends symmetrically from before/after deltas", () => {
+    const before = actionStateWithCard("red-production");
+    const after = structuredClone(before);
+    after.players[0].cubes.red = 2;
+    expect(scoreDelta(before, after)).toBe(17);
+    expect(scoreDelta(after, before)).toBe(-17);
+
+    const spendBefore = structuredClone(before);
+    const spendAfter = structuredClone(before);
+    spendBefore.players[0].cubes.red = 3;
+    spendAfter.players[0].cubes.red = 1;
+    expect(scoreDelta(spendBefore, spendAfter)).toBe(-11);
+  });
+
+  it("adds city build value by adjacent area count", () => {
+    const before = actionStateWithCard("red-production");
+    const intersections = new Map(
+      before.intersections.map((intersection) => [intersection.adjacentAreaIds.length, intersection])
+    );
+    for (const [adjacentAreaCount, expectedScore] of [
+      [1, 20],
+      [2, 50],
+      [3, 80],
+    ] as const) {
+      const intersection = intersections.get(adjacentAreaCount);
+      expect(intersection).toBeDefined();
+      const after = structuredClone(before);
+      after.intersections
+        .find((candidate) => candidate.id === intersection!.id)!
+        .cityStack.push({ playerId: "player-1" });
+      expect(
+        scoreRuleBasedAction(before, after, "player-1", {
+          type: "BUILD_CITY",
+          playerId: "player-1",
+          intersectionId: intersection!.id,
+        })
+      ).toBe(expectedScore);
+    }
+  });
+
+  it("adds area value for neutral coloring and same-color strengthening", () => {
+    const beforeNeutral = actionStateWithCard("red-production");
+    const centerCity = beforeNeutral.intersections.find((intersection) =>
+      intersection.adjacentAreaIds.includes("area-center")
+    );
+    expect(centerCity).toBeDefined();
+    centerCity!.cityStack.push({ playerId: "player-1" });
+    const afterNeutral = structuredClone(beforeNeutral);
+    afterNeutral.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+    expect(scoreDelta(beforeNeutral, afterNeutral)).toBe(30);
+
+    const beforeStrengthen = structuredClone(beforeNeutral);
+    beforeStrengthen.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+    beforeStrengthen.intersections
+      .find((intersection) => intersection.id === centerCity!.id)!
+      .cityStack.push({ playerId: "player-1" });
+    const afterStrengthen = structuredClone(beforeStrengthen);
+    afterStrengthen.areas.find((area) => area.id === "area-center")!.cubes.red = 2;
+    expect(scoreDelta(beforeStrengthen, afterStrengthen)).toBe(18);
+  });
+
+  it("adds 20 points per contribution gained", () => {
+    const before = actionStateWithCard("red-production");
+    const after = structuredClone(before);
+    after.players[0].contribution = 1;
+    expect(scoreDelta(before, after)).toBe(20);
+  });
+
+  it("selects the maximum scoring legal action", () => {
+    const state = actionStateWithCard("red-production");
+    const intersection = state.intersections.find((candidate) =>
+      candidate.adjacentAreaIds.includes("area-center")
+    );
+    expect(intersection).toBeDefined();
+    intersection!.cityStack.push({ playerId: "player-1" });
+    state.areas.find((area) => area.id === "area-center")!.cubes.red = 5;
+
+    const action = expectRuleBasedActionIsLegal(state, "max-score");
+    expect(action).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "scoring",
+    });
+  });
+
+  it("evaluates basic color production after delayed turn-end production", () => {
+    const state = actionStateWithCard("red-production");
+    state.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+
+    const action = expectRuleBasedActionIsLegal(state, "delayed-production");
+    expect(action).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "production",
+    });
+  });
+
+  it("evaluates tricolor-city special development and bonus at turn end", () => {
+    const state = actionStateWithCard("tricolor-city");
+    const intersection = state.intersections.find(
+      (candidate) => candidate.adjacentAreaIds.length === 3
+    );
+    expect(intersection).toBeDefined();
+    const [redAreaId, blueAreaId, yellowAreaId] = intersection!.adjacentAreaIds;
+    state.players[0].cubes = { red: 1, blue: 1, yellow: 0 };
+    state.areas.find((area) => area.id === yellowAreaId)!.cubes.yellow = 1;
+    intersection!.cityStack.push({ playerId: "player-1" });
+
+    const action = expectRuleBasedActionIsLegal(state, "tricolor-turn-end");
+    expect(action).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "production",
+    });
+
+    const afterUse = play(state, action);
+    const terminalStates = cardEvaluationTerminalStates(state, afterUse, "player-1");
+    expect(
+      terminalStates.some((terminal) => {
+        const player = terminal.state.players.find((candidate) => candidate.id === "player-1");
+        const redArea = terminal.state.areas.find((area) => area.id === redAreaId);
+        const blueArea = terminal.state.areas.find((area) => area.id === blueAreaId);
+        return (
+          player !== undefined &&
+          player.cubes.red >= 1 &&
+          player.cubes.blue >= 1 &&
+          player.cubes.yellow >= 1 &&
+          redArea?.cubes.red === 1 &&
+          blueArea?.cubes.blue === 1
+        );
+      })
+    ).toBe(true);
+  });
+
+  it("evaluates neutral-development coloring and arbitrary color bonus at turn end", () => {
+    const coloringState = actionStateWithCard("neutral-development");
+    const centerCity = coloringState.intersections.find((intersection) =>
+      intersection.adjacentAreaIds.includes("area-center")
+    );
+    expect(centerCity).toBeDefined();
+    coloringState.players[0].cubes = { red: 2, blue: 0, yellow: 0 };
+    centerCity!.cityStack.push({ playerId: "player-1" });
+    const coloringCard = coloringState.players[0].handCards[0];
+    const afterColoringUse = play(coloringState, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: coloringCard.instanceId,
+      mode: "production",
+    });
+    const coloringTerminals = cardEvaluationTerminalStates(
+      coloringState,
+      afterColoringUse,
+      "player-1"
+    );
+    expect(
+      coloringTerminals.some((terminal) => {
+        const center = terminal.state.areas.find((area) => area.id === "area-center");
+        return (
+          center?.cubes.red === 2 &&
+          scoreRuleBasedAction(coloringState, terminal.state, "player-1", {
+            type: "USE_CARD",
+            playerId: "player-1",
+            cardInstanceId: coloringCard.instanceId,
+            mode: "production",
+          }) > 0
+        );
+      })
+    ).toBe(true);
+
+    const bonusState = actionStateWithCard("neutral-development");
+    bonusState.areas.find((area) => area.id === "area-center")!.cubes = {
+      red: 1,
+      blue: 1,
+      yellow: 0,
+    };
+    for (const intersection of bonusState.intersections.filter((candidate) =>
+      candidate.adjacentAreaIds.includes("area-center")
+    ).slice(0, 3)) {
+      intersection.cityStack.push({ playerId: "player-2" });
+    }
+
+    const bonusAction = expectRuleBasedActionIsLegal(bonusState, "neutral-bonus");
+    expect(bonusAction).toMatchObject({
+      type: "USE_CARD",
+      playerId: "player-1",
+      mode: "production",
+    });
+
+    const afterUse = play(bonusState, bonusAction);
+    const terminalStates = cardEvaluationTerminalStates(bonusState, afterUse, "player-1");
+    expect(
+      terminalStates.some((terminal) => {
+        const player = terminal.state.players.find((candidate) => candidate.id === "player-1");
+        return player !== undefined && player.cubes.red + player.cubes.blue + player.cubes.yellow >= 3;
+      })
+    ).toBe(true);
+  });
+
+  it("does not include optional city builds in card evaluation continuations", () => {
+    const state = actionStateWithCard("red-production");
+    state.players[0].cubes = { red: 0, blue: 1, yellow: 1 };
+    state.areas.find((area) => area.id === "area-center")!.cubes.red = 1;
+    const card = state.players[0].handCards[0];
+    const afterUse = play(state, {
+      type: "USE_CARD",
+      playerId: "player-1",
+      cardInstanceId: card.instanceId,
+      mode: "production",
+    });
+    expect(afterUse.players[0].cubes).toEqual({ red: 1, blue: 1, yellow: 1 });
+
+    const terminalStates = cardEvaluationTerminalStates(state, afterUse, "player-1");
+    expect(terminalStates.length).toBeGreaterThan(0);
+    expect(
+      terminalStates.every((terminal) =>
+        terminal.actions.every((action) => action.type !== "BUILD_CITY")
+      )
+    ).toBe(true);
+  });
+
+  it("uses seeded RNG only for ties", () => {
+    const state = createInitialState(["A", "B"]);
+    const first = selectRuleBasedAgentAction(state, new SeededRng("tie-seed"));
+    const second = selectRuleBasedAgentAction(state, new SeededRng("tie-seed"));
+    expect(first).toEqual(second);
+    expect(first?.type).toBe("DRAFT_PICK");
+  });
+
+  it("completes 2-player and 4-player games", () => {
+    expect(
+      simulateGame({
+        gameId: "rule-two",
+        gameSeed: "rule-two",
+        playerCount: 2,
+        agents: createAgents(2, "rule-based"),
+      }).status
+    ).toBe("completed");
+    expect(
+      simulateGame({
+        gameId: "rule-four",
+        gameSeed: "rule-four",
+        playerCount: 4,
+        agents: createAgents(4, "rule-based"),
+      }).status
+    ).toBe("completed");
+  });
+});
+
 describe("headless runner", () => {
   it("replays the same final result and event snapshots for the same game seed", () => {
     const first = simulateGame({ gameId: "game-1", gameSeed: "fixed", playerCount: 4 });
@@ -155,6 +432,13 @@ describe("headless runner", () => {
     expect(records).toHaveLength(3);
     expect(records.every((record) => record.status === "completed")).toBe(true);
     expect(new Set(records.map((record) => record.gameSeed)).size).toBe(3);
+  });
+
+  it("runs multiple rule-based games", () => {
+    const records = simulateGames("rule-run-seed", 2, 2, "rule-based");
+    expect(records).toHaveLength(2);
+    expect(records.every((record) => record.status === "completed")).toBe(true);
+    expect(records.every((record) => record.agents["player-1"].type === "rule-based")).toBe(true);
   });
 
   it("records safety-limit failures without marking them completed", () => {
@@ -287,15 +571,35 @@ describe("simulation output", () => {
     const summaryJson = JSON.parse(await readFile(join(runDirectory, "summary.json"), "utf8"));
 
     expect(metadataJson.runSeed).toBe("output-seed");
+    expect(metadataJson.agent).toBe("random");
     expect(metadataJson.completedGames).toBe(metadata.completedGames);
     expect(gameLines).toHaveLength(2);
     expect(gameLines[0].gameSeed).toContain("output-seed:game-1");
     expect(gameLines[0].status).toBe("completed");
+    expect(gameLines[0].agents["player-1"].type).toBe("random");
     expect(gameLines[0].replay).toBeUndefined();
     expect(gameLines[0].replayFile).toBe("replays/game-000001.jsonl");
     expect(gameLines[0].replayStepCount).toBeGreaterThan(0);
     await expect(stat(join(runDirectory, "replays", "game-000001.jsonl"))).resolves.toBeDefined();
     expect(summaryJson.completedGames).toBe(2);
     expect(summaryJson.failedGames).toBe(0);
+  });
+
+  it("writes selected rule-based agent metadata", async () => {
+    const outputDirectory = await mkdtemp(join(tmpdir(), "sdb-rule-simulation-"));
+    const { runDirectory, metadata } = await writeSimulationRun({
+      games: 1,
+      players: 2,
+      seed: "rule-output-seed",
+      agent: "rule-based",
+      outputDirectory,
+    });
+    const metadataJson = JSON.parse(await readFile(join(runDirectory, "metadata.json"), "utf8"));
+    const gameLine = JSON.parse((await readFile(join(runDirectory, "games.jsonl"), "utf8")).trim());
+
+    expect(metadata.agent).toBe("rule-based");
+    expect(metadataJson.agent).toBe("rule-based");
+    expect(metadataJson.agents["player-1"].type).toBe("rule-based");
+    expect(gameLine.agents["player-1"].type).toBe("rule-based");
   });
 });

@@ -11,8 +11,10 @@ import type {
 export const simulationSchemaVersion = "simulation-log-v2";
 export const replayLogFormat = "initial-snapshot-delta-jsonl";
 
+export type AgentType = "random" | "rule-based";
+
 export type AgentConfig = {
-  type: "random";
+  type: AgentType;
   name: string;
 };
 
@@ -164,6 +166,7 @@ export type SimulationRunOptions = {
   games: number;
   players: number;
   seed: string;
+  agent?: AgentType;
   outputDirectory: string;
   maxDecisionsPerGame?: number;
   retainRecords?: boolean;
@@ -178,6 +181,7 @@ export type SimulationMetadata = {
   failedGames: number;
   playerCount: number;
   runSeed: string;
+  agent?: AgentType;
   agents: Record<string, AgentConfig>;
   rules: {
     package: "@sdb/game-core";

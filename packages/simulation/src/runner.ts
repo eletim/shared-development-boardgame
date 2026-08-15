@@ -9,10 +9,12 @@ import {
 } from "@sdb/game-core";
 import { cubeColors, type CardType, type CardUseMode, type CubeCounts, type GameAction } from "@sdb/protocol";
 import { createRandomAgents, selectRandomAgentAction } from "./random-agent";
+import { createRuleBasedAgents, selectRuleBasedAgentAction } from "./rule-based-agent";
 import { SeededRng } from "./rng";
 import {
   simulationSchemaVersion,
   type AgentConfig,
+  type AgentType,
   type CompletedGameRecord,
   type FailedGameRecord,
   type GameRecord,
@@ -55,6 +57,25 @@ const clone = <T>(value: T): T => structuredClone(value) as T;
 
 const currentPlayerId = (state: GameState): string | null =>
   state.status === "active" ? state.players[state.currentPlayerIndex].id : null;
+
+export const createAgents = (
+  playerCount: number,
+  agentType: AgentType = "random"
+): Record<string, AgentConfig> => {
+  if (agentType === "rule-based") return createRuleBasedAgents(playerCount);
+  return createRandomAgents(playerCount);
+};
+
+const selectAgentAction = (
+  state: GameState,
+  agents: Record<string, AgentConfig>,
+  rng: SeededRng
+): GameAction | null => {
+  const playerId = currentPlayerId(state);
+  const agentType = playerId ? agents[playerId]?.type ?? "random" : "random";
+  if (agentType === "rule-based") return selectRuleBasedAgentAction(state, rng);
+  return selectRandomAgentAction(state, rng);
+};
 
 const createReplaySnapshot = (state: GameState): ReplaySnapshot => {
   const publicState = toPublicState(state);
@@ -378,7 +399,7 @@ export const simulateGame = ({
   gameId,
   gameSeed,
   playerCount,
-  agents = createRandomAgents(playerCount),
+  agents = createAgents(playerCount),
   maxDecisions = maxDefaultDecisions,
 }: SimulateGameOptions): GameRecord => {
   const rng = new SeededRng(gameSeed);
@@ -395,7 +416,7 @@ export const simulateGame = ({
       return completeRecord(gameId, gameSeed, playerCount, agents, stats, replay, state);
     }
 
-    const action = selectRandomAgentAction(state, rng);
+    const action = selectAgentAction(state, agents, rng);
     if (!action) {
       return failRecord(
         gameId,
@@ -451,13 +472,17 @@ export const simulateGames = (
   runSeed: string,
   games: number,
   playerCount: number,
+  agentType: AgentType = "random",
   maxDecisions?: number
-): GameRecord[] =>
-  deriveGameSeeds(runSeed, games).map((gameSeed, index) =>
+): GameRecord[] => {
+  const agents = createAgents(playerCount, agentType);
+  return deriveGameSeeds(runSeed, games).map((gameSeed, index) =>
     simulateGame({
       gameId: `game-${String(index + 1).padStart(6, "0")}`,
       gameSeed,
       playerCount,
+      agents,
       maxDecisions,
     })
   );
+};

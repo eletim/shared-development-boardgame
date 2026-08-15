@@ -1,8 +1,7 @@
 import { mkdir, open, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createRandomAgents } from "./random-agent";
 import { createReplayLog } from "./replay-delta";
-import { deriveGameSeeds, simulateGame } from "./runner";
+import { createAgents, deriveGameSeeds, simulateGame } from "./runner";
 import { createSummary } from "./summary";
 import {
   replayLogFormat,
@@ -49,7 +48,8 @@ export const writeSimulationRun = async (
 
   const records: GameRecord[] = [];
   const summaryRecords: SimulationSummaryRecord[] = [];
-  const agents = createRandomAgents(options.players);
+  const agent = options.agent ?? "random";
+  const agents = createAgents(options.players, agent);
   let completedGames = 0;
   let failedGames = 0;
   const gamesFile = await open(join(runDirectory, "games.jsonl"), "w");
@@ -85,6 +85,7 @@ export const writeSimulationRun = async (
     failedGames,
     playerCount: options.players,
     runSeed: options.seed,
+    agent,
     agents,
     rules: {
       package: "@sdb/game-core",
