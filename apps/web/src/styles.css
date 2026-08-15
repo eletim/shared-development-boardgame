@@ -880,11 +880,36 @@ th {
 }
 
 .replay-workspace .board-panel {
-  height: min(70vh, 700px);
+  height: 100%;
+}
+
+.replay-workspace {
+  grid-template-rows: clamp(310px, 42vh, 370px) auto;
+}
+
+.replay-workspace .operations-panel .metric-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.replay-workspace .operations-panel .metric {
+  padding: 7px;
+}
+
+.replay-workspace .operations-panel .metric strong {
+  font-size: 16px;
+  overflow-wrap: anywhere;
 }
 
 .readonly-card {
   cursor: default;
+}
+
+.readonly-card-list .game-card {
+  min-height: 104px;
+}
+
+.readonly-card-list .game-card-body p {
+  -webkit-line-clamp: 1;
 }
 
 .readonly-card-list .hint {
@@ -893,9 +918,14 @@ th {
 
 .event-list {
   display: grid;
-  grid-template-columns: 110px 1fr;
-  gap: 7px 10px;
+  gap: 7px;
   margin: 0;
+}
+
+.event-list-row {
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 10px;
 }
 
 .event-list dt {

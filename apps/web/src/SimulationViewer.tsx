@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronsLeft, ChevronRight, ChevronsRight, X } from "lucide-react";
-import { cubeColors, type AreaColor, type CardType, type CardUseMode, type CubeColor } from "@sdb/protocol";
+import { type AreaColor, type CardType, type CardUseMode } from "@sdb/protocol";
 import { type GameRecord, type ReplayStep, type SimulationMetadata, type SimulationSummary } from "@sdb/simulation";
 import { Board } from "./Board";
+import { GameCard, PlayerStrip } from "./GameChrome";
 
 type RunListItem = {
   runId: string;
@@ -107,12 +108,6 @@ const modeLabels: Record<CardUseMode, string> = {
   basic: "基本取得",
 };
 
-const colorLabels: Record<CubeColor, string> = {
-  red: "赤",
-  blue: "青",
-  yellow: "黄",
-};
-
 const areaColorLabels: Record<AreaColor, string> = {
   red: "赤",
   blue: "青",
@@ -210,6 +205,44 @@ const EventDetails = ({ step }: { step: ReplayStep }) => {
   const placements = action?.type === "END_TURN"
     ? [action.placement, ...(action.placements ?? [])].filter(Boolean)
     : [];
+  const eventRowCandidates: { label: string; value: ReactNode | null }[] = [
+    {
+      label: "使用カード",
+      value: typeof step.details.cardType === "string" ? cardLabels[step.details.cardType as CardType] ?? step.details.cardType : null,
+    },
+    {
+      label: "カード用途",
+      value: action?.type === "USE_CARD" ? modeLabels[action.mode] : typeof step.details.mode === "string" ? step.details.mode : null,
+    },
+    {
+      label: "都市建設",
+      value: action?.type === "BUILD_CITY" ? `${action.intersectionId} / Lv${numberFromDetails(step.details, "level") ?? "?"}` : null,
+    },
+    {
+      label: "キューブ配置",
+      value: placements.length > 0 ? placements.map((placement) => `${placement?.areaId}:${placement?.color}`).join(" / ") : null,
+    },
+    {
+      label: "得点変化",
+      value: step.eventType === "score_gain" ? `${String(step.details.playerId)} +${String(step.details.amount)}` : null,
+    },
+    {
+      label: "世界Lv変化",
+      value: step.eventType === "world_level_unlock" ? `Lv${String(step.details.level)} ${String(step.details.playerId)}` : null,
+    },
+    {
+      label: "特殊効果",
+      value: typeof step.details.developmentType === "string" ? step.details.developmentType : null,
+    },
+    {
+      label: "都市生産",
+      value: step.eventType === "city_production" ? <JsonValue value={step.details.production} /> : null,
+    },
+  ];
+  const eventRows = eventRowCandidates.filter(
+    (row): row is { label: string; value: ReactNode } => row.value !== null
+  );
+
   return (
     <section className="viewer-section" aria-label="Replay step情報">
       <h3>Step情報</h3>
@@ -219,24 +252,18 @@ const EventDetails = ({ step }: { step: ReplayStep }) => {
         <Metric label="acting player" value={step.playerId ?? "system"} />
         <Metric label="event type" value={step.eventType} />
       </MetricGrid>
-      <dl className="event-list">
-        <dt>使用カード</dt>
-        <dd>{typeof step.details.cardType === "string" ? cardLabels[step.details.cardType as CardType] ?? step.details.cardType : "なし"}</dd>
-        <dt>カード用途</dt>
-        <dd>{action?.type === "USE_CARD" ? modeLabels[action.mode] : typeof step.details.mode === "string" ? step.details.mode : "なし"}</dd>
-        <dt>都市建設</dt>
-        <dd>{action?.type === "BUILD_CITY" ? `${action.intersectionId} / Lv${numberFromDetails(step.details, "level") ?? "?"}` : "なし"}</dd>
-        <dt>キューブ配置</dt>
-        <dd>{placements.length > 0 ? placements.map((placement) => `${placement?.areaId}:${placement?.color}`).join(" / ") : "なし"}</dd>
-        <dt>得点変化</dt>
-        <dd>{step.eventType === "score_gain" ? `${String(step.details.playerId)} +${String(step.details.amount)}` : "なし"}</dd>
-        <dt>世界Lv変化</dt>
-        <dd>{step.eventType === "world_level_unlock" ? `Lv${String(step.details.level)} ${String(step.details.playerId)}` : "なし"}</dd>
-        <dt>特殊効果</dt>
-        <dd>{typeof step.details.developmentType === "string" ? step.details.developmentType : "なし"}</dd>
-        <dt>都市生産</dt>
-        <dd>{step.eventType === "city_production" ? <JsonValue value={step.details.production} /> : "なし"}</dd>
-      </dl>
+      {eventRows.length > 0 ? (
+        <dl className="event-list">
+          {eventRows.map((row) => (
+            <div key={row.label} className="event-list-row">
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="hint">このstepの追加イベントはありません。</p>
+      )}
       <details>
         <summary>保存details</summary>
         <pre>{JSON.stringify(step.details, null, 2)}</pre>
@@ -346,30 +373,7 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
           </div>
         </header>
 
-        <section className="player-strip" aria-label="プレイヤー">
-          {currentSnapshot.players.map((player) => (
-            <article
-              key={player.id}
-              className={`player-card ${player.id === currentSnapshot.currentPlayerId ? "active" : ""}`}
-              style={{ borderTopColor: player.color }}
-            >
-              <div className="player-name">
-                <span style={{ backgroundColor: player.color }} />
-                <strong>{player.name}</strong>
-              </div>
-              <div className="cube-row">
-                {cubeColors.map((color) => (
-                  <span key={color} className={`cube-pill ${color}`}>
-                    {colorLabels[color]} {player.cubes[color]}
-                  </span>
-                ))}
-              </div>
-              <p>
-                都市 {player.cityCount} · 貢献 {player.contribution} · 最終 {player.finalScore} · 手札 {player.handCards.length}
-              </p>
-            </article>
-          ))}
-        </section>
+        <PlayerStrip players={currentSnapshot.players} currentPlayerId={currentSnapshot.currentPlayerId} />
 
         <section className="workspace replay-workspace">
           <aside className="card-panel" aria-label="カード選択">
@@ -379,14 +383,12 @@ export const SimulationViewer = ({ onBackToGame }: { onBackToGame: () => void })
               <div className="card-list readonly-card-list">
                 {replayCurrentPlayer?.handCards.length ? (
                   replayCurrentPlayer.handCards.map((card) => (
-                    <article
+                    <GameCard
                       key={card.instanceId}
-                      className={`selected-card readonly-card ${card.instanceId === usedCardId ? "highlight" : ""}`}
-                    >
-                      <strong>{card.name}</strong>
-                      <span>{card.actionText}</span>
-                      <span>{card.scoringText}</span>
-                    </article>
+                      card={card}
+                      readOnly
+                      highlight={card.instanceId === usedCardId}
+                    />
                   ))
                 ) : (
                   <p className="hint">表示できる手札カードがありません。</p>
