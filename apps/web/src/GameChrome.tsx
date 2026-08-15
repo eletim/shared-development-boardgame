@@ -59,6 +59,7 @@ export const GameCard = ({
   disabled = false,
   readOnly = false,
   highlight = false,
+  density = "full",
   onSelect,
 }: {
   card: CardSummary;
@@ -66,11 +67,13 @@ export const GameCard = ({
   disabled?: boolean;
   readOnly?: boolean;
   highlight?: boolean;
+  density?: "compact" | "full";
   onSelect?: (card: CardSummary) => void;
 }) => {
   const className = [
     "game-card",
     `card-${card.color}`,
+    `density-${density}`,
     selected ? "selected" : "",
     highlight ? "highlight" : "",
     readOnly ? "readonly-card" : "",
@@ -85,8 +88,12 @@ export const GameCard = ({
       <div className="game-card-body">
         <span className="card-mode-label">行動</span>
         <p>{card.actionText}</p>
-        <span className="card-mode-label">得点</span>
-        <p>{card.scoringText}</p>
+        {density === "full" ? (
+          <>
+            <span className="card-mode-label">得点</span>
+            <p>{card.scoringText}</p>
+          </>
+        ) : null}
       </div>
     </>
   );

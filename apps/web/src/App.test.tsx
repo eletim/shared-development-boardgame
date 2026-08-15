@@ -365,6 +365,36 @@ describe("App", () => {
     expect(screen.queryByText("B なし")).not.toBeInTheDocument();
   });
 
+  it("shows the newest history entry as the always-visible latest event", async () => {
+    const state = baseState("action", true);
+    state.history = [
+      {
+        id: 2,
+        round: 1,
+        phase: "action",
+        playerId: "player-1",
+        playerName: "A",
+        type: "END_TURN",
+        summary: "最新の手番終了",
+      },
+      {
+        id: 1,
+        round: 1,
+        phase: "action",
+        playerId: "player-1",
+        playerName: "A",
+        type: "USE_CARD",
+        summary: "古いカード使用",
+      },
+    ];
+    mockFetch([state]);
+    render(<App />);
+
+    const latestEvent = await screen.findByLabelText("最新イベント");
+    expect(within(latestEvent).getByText("最新の手番終了")).toBeInTheDocument();
+    expect(within(latestEvent).queryByText("古いカード使用")).not.toBeInTheDocument();
+  });
+
   it("zooms only the board between the configured minimum and maximum", async () => {
     mockFetch([baseState("action", true)]);
     render(<App />);
