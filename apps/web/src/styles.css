@@ -259,12 +259,21 @@ select {
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(260px, 310px) minmax(650px, 1fr) minmax(260px, 310px);
-  grid-template-rows: clamp(340px, 50vh, 440px) auto;
+  grid-template-rows: auto clamp(340px, 46vh, 500px) auto;
   grid-template-areas:
+    "guide guide history"
     "operations board history"
     "cards cards history";
   gap: 10px;
   align-items: stretch;
+}
+
+.focus-draft .workspace {
+  grid-template-rows: auto auto clamp(240px, 32vh, 320px);
+  grid-template-areas:
+    "guide guide history"
+    "cards cards history"
+    "operations board history";
 }
 
 .card-panel,
@@ -281,12 +290,133 @@ select {
 
 .operations-panel {
   grid-area: operations;
+  min-height: 0;
+  overflow: auto;
 }
 
 .right-panel {
   grid-area: history;
   min-height: 0;
   overflow: hidden;
+}
+
+.turn-guide {
+  grid-area: guide;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.2fr) minmax(140px, 0.45fr) minmax(220px, 0.8fr) minmax(190px, 0.7fr);
+  gap: 10px;
+  align-items: stretch;
+  background: linear-gradient(135deg, #25241ce8, #18211fe8 55%, #121817e8);
+  border: 1px solid #837646;
+  border-radius: 8px;
+  padding: 10px;
+  box-shadow: 0 14px 36px #00000055, inset 0 0 32px #f3d77812;
+}
+
+.guide-copy {
+  display: grid;
+  gap: 4px;
+  align-content: center;
+}
+
+.guide-eyebrow {
+  color: #dccb7e;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.turn-guide h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.turn-guide p {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.guide-target,
+.guide-steps {
+  display: grid;
+  gap: 4px;
+  align-content: center;
+  background: #101716c8;
+  border: 1px solid #4c554f;
+  border-radius: 7px;
+  padding: 8px;
+}
+
+.guide-target span,
+.guide-steps strong {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.guide-target strong {
+  color: #f3d778;
+  font-size: 16px;
+}
+
+.guide-steps span {
+  color: var(--text);
+  font-weight: 800;
+}
+
+.guide-steps.optional span {
+  color: #c9c2b5;
+}
+
+.guide-controls {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.9fr) minmax(150px, 0.4fr);
+  gap: 10px;
+  align-items: stretch;
+}
+
+.selected-action-card {
+  display: grid;
+  gap: 5px;
+  border: 1px solid #5b625d;
+  border-left: 8px solid #8d8470;
+  border-radius: 8px;
+  background: #111716;
+  padding: 9px 10px;
+}
+
+.selected-action-card.card-red {
+  border-left-color: var(--red);
+}
+
+.selected-action-card.card-blue {
+  border-left-color: var(--blue);
+}
+
+.selected-action-card.card-yellow {
+  border-left-color: var(--yellow);
+}
+
+.selected-action-card.card-multi {
+  border-left-color: #d8c268;
+}
+
+.selected-action-card p {
+  font-size: 13px;
+}
+
+.guided-modes,
+.guided-choice {
+  margin: 0;
+}
+
+.guided-field {
+  min-width: 140px;
+}
+
+.guide-primary {
+  min-height: 100%;
 }
 
 .actions,
@@ -376,6 +506,22 @@ select {
 
 .game-card {
   min-height: 124px;
+}
+
+.game-card.density-compact {
+  min-height: 78px;
+}
+
+.game-card.density-compact .game-card-band {
+  padding: 8px 10px;
+}
+
+.game-card.density-compact .game-card-body {
+  padding: 7px 10px;
+}
+
+.game-card.density-compact .game-card-body p {
+  -webkit-line-clamp: 1;
 }
 
 .game-card.selected,
@@ -702,6 +848,20 @@ select {
   overflow: auto;
 }
 
+.latest-history {
+  max-height: none;
+}
+
+.history-drawer {
+  opacity: 0.78;
+}
+
+.history-drawer summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 900;
+}
+
 .history article {
   display: grid;
   gap: 3px;
@@ -715,6 +875,45 @@ select {
 
 .history span {
   color: var(--muted);
+}
+
+.focus-draft .turn-guide,
+.focus-mode .turn-guide,
+.focus-bonus .turn-guide {
+  border-color: #f3d778;
+  box-shadow: 0 0 0 1px #f3d77855, 0 18px 42px #00000070;
+}
+
+.focus-draft .card-panel .actions,
+.focus-card .card-panel .actions,
+.focus-mode .card-panel .actions,
+.focus-bonus .turn-guide,
+.focus-result .results {
+  box-shadow: 0 0 0 2px #f3d77870, 0 0 30px #f3d77824;
+}
+
+.focus-area .board-panel,
+.focus-city .board-panel {
+  border-color: #f3d778;
+  box-shadow: 0 0 0 2px #f3d77855, var(--shadow), inset 0 0 90px #00000070;
+}
+
+.focus-area .development-actions {
+  order: -1;
+}
+
+.focus-area .city-build-actions {
+  opacity: 0.78;
+}
+
+.focus-area .hand-card-list .game-card[disabled],
+.focus-bonus .hand-card-list .game-card[disabled] {
+  opacity: 0.55;
+}
+
+.focus-card .operations-panel .actions,
+.focus-mode .operations-panel .actions {
+  opacity: 0.82;
 }
 
 .viewer-shell {
@@ -885,6 +1084,9 @@ th {
 
 .replay-workspace {
   grid-template-rows: clamp(310px, 42vh, 370px) auto;
+  grid-template-areas:
+    "operations board history"
+    "cards cards history";
 }
 
 .replay-workspace .operations-panel .metric-grid {
@@ -954,10 +1156,24 @@ details pre {
     grid-template-columns: 1fr;
     grid-template-rows: auto;
     grid-template-areas:
+      "guide"
       "board"
       "cards"
       "operations"
       "history";
+  }
+
+  .replay-workspace {
+    grid-template-areas:
+      "board"
+      "cards"
+      "operations"
+      "history";
+  }
+
+  .turn-guide,
+  .guide-controls {
+    grid-template-columns: 1fr;
   }
 
   .topbar {
