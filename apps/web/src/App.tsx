@@ -11,6 +11,7 @@ import {
   type PublicGameState,
 } from "@sdb/protocol";
 import { Board } from "./Board";
+import { GameCard, PlayerStrip } from "./GameChrome";
 import { SimulationViewer } from "./SimulationViewer";
 
 const colorLabels: Record<CubeColor, string> = {
@@ -340,30 +341,7 @@ export const App = () => {
         </div>
       </header>
 
-      <section className="player-strip" aria-label="プレイヤー">
-        {state.players.map((player) => (
-          <article
-            key={player.id}
-            className={`player-card ${player.id === state.currentPlayerId ? "active" : ""}`}
-            style={{ borderTopColor: player.color }}
-          >
-            <div className="player-name">
-              <span style={{ backgroundColor: player.color }} />
-              <strong>{player.name}</strong>
-            </div>
-            <div className="cube-row">
-              {cubeColors.map((color) => (
-                <span key={color} className={`cube-pill ${color}`}>
-                  {colorLabels[color]} {player.cubes[color]}
-                </span>
-              ))}
-            </div>
-            <p>
-              都市 {player.cityCount} · 貢献 {player.contribution} · 最終 {player.finalScore} · 手札 {player.handCards.length}
-            </p>
-          </article>
-        ))}
-      </section>
+      <PlayerStrip players={state.players} currentPlayerId={state.currentPlayerId} />
 
       <section className="workspace">
         <aside className="card-panel" aria-label="カード選択">
@@ -372,11 +350,7 @@ export const App = () => {
               <h2>ドラフト {state.draftPickNumber} / 8</h2>
               <div className="card-list">
                 {state.legal.draftPack.map((card) => (
-                  <button key={card.instanceId} className="card-button" onClick={() => draftPick(card)}>
-                    <strong>{card.name}</strong>
-                    <span>{card.actionText}</span>
-                    <span>{card.scoringText}</span>
-                  </button>
+                  <GameCard key={card.instanceId} card={card} onSelect={draftPick} />
                 ))}
               </div>
             </section>
@@ -392,27 +366,17 @@ export const App = () => {
                     : "カード使用済み。都市建設後に手番終了できます。"}
                 </p>
               ) : null}
-              <label>
-                手札
-                <select
-                  value={selectedCardId}
-                  onChange={(event) => setSelectedCardId(event.target.value)}
-                  disabled={state.turnCardUsed}
-                >
-                  {currentPlayer?.handCards.map((card) => (
-                    <option key={card.instanceId} value={card.instanceId}>
-                      {card.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {selectedCardForAction ? (
-                <article className="selected-card">
-                  <strong>{selectedCardForAction.name}</strong>
-                  <span>{selectedCardForAction.actionText}</span>
-                  <span>{selectedCardForAction.scoringText}</span>
-                </article>
-              ) : null}
+              <div className="card-list hand-card-list" aria-label="手札">
+                {currentPlayer?.handCards.map((card) => (
+                  <GameCard
+                    key={card.instanceId}
+                    card={card}
+                    selected={card.instanceId === selectedCardId}
+                    disabled={state.turnCardUsed}
+                    onSelect={(nextCard) => setSelectedCardId(nextCard.instanceId)}
+                  />
+                ))}
+              </div>
               <div className="mode-tabs" role="tablist" aria-label="カード用途">
                 {availableUseModes.map((candidate) => (
                   <button
