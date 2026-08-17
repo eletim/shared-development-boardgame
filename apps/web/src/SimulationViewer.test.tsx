@@ -272,7 +272,7 @@ describe("SimulationViewer", () => {
     expect(screen.getByRole("heading", { name: "Replay" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Run概要" })).not.toBeInTheDocument();
     expect(await screen.findByTestId("replay-step-readout")).toHaveTextContent("step 0 / 1");
-    expect(screen.getByText("中立 Lv0 0/2")).toBeInTheDocument();
+    expect(screen.getByLabelText(/中央: 中立エリア、Lv0、キューブ 0\/2/)).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "盤面" })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "カード選択" })).toHaveTextContent("赤の生産");
     expect(screen.getByRole("complementary", { name: "カード選択" })).toHaveTextContent("読み取り専用");
@@ -281,13 +281,13 @@ describe("SimulationViewer", () => {
 
     await userEvent.click(screen.getByRole("button", { name: "1step進む" }));
     expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 1 / 1");
-    expect(screen.getByText("赤 Lv1 1/2")).toBeInTheDocument();
-    expect(screen.getByText("player-1 Lv1")).toBeInTheDocument();
+    expect(screen.getByLabelText(/中央: 赤エリア、Lv1、キューブ 1\/2/)).toBeInTheDocument();
+    expect(screen.getByTestId("city-intersection-01-0")).toHaveAttribute("aria-label", "player-1のLv1都市");
     expect(screen.getByText(/都市 1 · 貢献 5 · 最終 5 · 手札 0/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "1step戻る" }));
     expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 0 / 1");
-    expect(screen.getByText("中立 Lv0 0/2")).toBeInTheDocument();
+    expect(screen.getByLabelText(/中央: 中立エリア、Lv0、キューブ 0\/2/)).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "最後へ" }));
     expect(screen.getByTestId("replay-step-readout")).toHaveTextContent("step 1 / 1");
