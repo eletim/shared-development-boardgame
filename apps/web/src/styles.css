@@ -142,6 +142,13 @@ select {
   overflow: hidden;
 }
 
+.play-shell {
+  padding: 0;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  background: #0d1110;
+}
+
 .topbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
@@ -282,6 +289,12 @@ select {
   isolation: isolate;
 }
 
+.play-shell .board-scene {
+  display: block;
+  height: 100vh;
+  overflow: hidden;
+}
+
 .draft-scene {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
@@ -309,6 +322,114 @@ select {
 
 .board-hud > * {
   pointer-events: auto;
+}
+
+.play-hud {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  right: 12px;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: minmax(160px, 0.34fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.play-hud > * {
+  pointer-events: auto;
+}
+
+.hud-turn,
+.hud-player,
+.hud-tools,
+.latest-toast,
+.play-history-tray .history-drawer,
+.action-cluster,
+.play-shell .hand-rail .actions {
+  background: #111615d6;
+  border: 1px solid #ffffff18;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 12px 30px #00000055;
+}
+
+.hud-turn {
+  display: grid;
+  gap: 2px;
+  border-radius: 7px;
+  padding: 8px 10px;
+}
+
+.hud-turn strong {
+  font-size: 16px;
+}
+
+.hud-turn span,
+.hud-player span,
+.latest-toast span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.hud-player-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 6px;
+}
+
+.hud-player {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 7px;
+  border-left: 4px solid;
+  border-radius: 7px;
+  padding: 7px 9px;
+}
+
+.hud-player.active {
+  outline: 2px solid #f3d778;
+  box-shadow: 0 0 0 1px #000000, 0 0 22px #f3d77833;
+}
+
+.hud-player strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hud-cubes {
+  color: #f3d778;
+}
+
+.hud-tools {
+  border-radius: 7px;
+  padding: 5px;
+}
+
+.compact-guide {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 7px 13px;
+  background: #111615dc;
+  border-color: #f3d77855;
+}
+
+.compact-guide strong {
+  font-size: 15px;
+}
+
+.compact-guide span {
+  color: #f3d778;
+  font-size: 13px;
+  font-weight: 900;
 }
 
 .workspace {
@@ -356,6 +477,14 @@ select {
   min-width: 0;
 }
 
+.play-shell .hand-rail {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  z-index: 7;
+}
+
 .operations-panel {
   grid-area: operations;
   min-height: 0;
@@ -385,6 +514,21 @@ select {
   opacity: 0.86;
 }
 
+.play-history-tray {
+  position: absolute;
+  top: 76px;
+  right: 12px;
+  z-index: 8;
+  display: grid;
+  gap: 8px;
+  width: min(260px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+.play-history-tray > * {
+  pointer-events: auto;
+}
+
 .draft-scene .table-log,
 .result-scene .table-log {
   grid-area: 1 / 2 / 3 / 3;
@@ -407,6 +551,15 @@ select {
   padding: 7px 9px;
   background: #121817e8;
   border-color: #f3d77855;
+}
+
+.play-shell .board-hud {
+  position: absolute;
+  top: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(720px, calc(100vw - 320px));
+  z-index: 7;
 }
 
 .guide-copy {
@@ -524,6 +677,15 @@ select {
   backdrop-filter: blur(8px);
 }
 
+.latest-toast {
+  display: grid;
+  gap: 2px;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 12px;
+  opacity: 0.88;
+}
+
 .draft-scene .turn-guide,
 .result-scene .turn-guide {
   grid-area: 1 / 1 / 2 / 2;
@@ -630,6 +792,11 @@ select {
   background: linear-gradient(180deg, #151b1ae8, #0d1211ef);
 }
 
+.play-shell .hand-rail .actions {
+  border-radius: 8px 8px 0 0;
+  padding: 8px 10px;
+}
+
 .hand-rail .actions h2 {
   margin-bottom: 7px;
   font-size: 14px;
@@ -656,6 +823,11 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
 
+.play-shell .hand-rail .hand-card-list {
+  grid-template-columns: repeat(auto-fit, minmax(132px, 170px));
+  justify-content: start;
+}
+
 .card-use-strip {
   display: grid;
   grid-template-columns: minmax(220px, 0.9fr) minmax(340px, 1fr);
@@ -664,9 +836,24 @@ select {
   margin-top: 8px;
 }
 
+.play-shell .card-use-strip {
+  grid-template-columns: auto minmax(360px, 0.9fr);
+  justify-content: center;
+  align-items: center;
+  margin-top: 7px;
+}
+
 .card-use-strip .selected-action-card {
   min-height: 0;
   padding: 7px 9px;
+}
+
+.play-shell .selected-action-card {
+  grid-auto-flow: column;
+  align-items: center;
+  min-width: 210px;
+  max-width: 320px;
+  background: #101615;
 }
 
 .card-use-strip .selected-action-card p {
@@ -674,17 +861,27 @@ select {
   line-height: 1.3;
 }
 
+.selected-card-details,
 .selected-card-texts {
   display: grid;
   gap: 4px;
 }
 
+.selected-card-details summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.selected-card-details p,
 .selected-card-texts p {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   gap: 6px;
 }
 
+.selected-card-details span,
 .selected-card-texts span {
   align-self: start;
   border-radius: 4px;
@@ -700,6 +897,10 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(82px, 0.4fr)) minmax(230px, 1fr);
   gap: 7px;
+}
+
+.play-shell .selected-card-actions {
+  grid-template-columns: repeat(2, minmax(76px, 1fr)) minmax(230px, 1.3fr);
 }
 
 .basic-use-group {
@@ -865,6 +1066,58 @@ select {
   gap: 8px;
 }
 
+.context-action-strip {
+  position: absolute;
+  left: 50%;
+  bottom: 210px;
+  z-index: 7;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  gap: 8px;
+  width: min(980px, calc(100vw - 28px));
+  max-height: 34vh;
+  overflow: auto;
+  padding: 0;
+  transform: translateX(-50%);
+}
+
+.action-cluster {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 176px;
+  max-width: 360px;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.action-cluster h2 {
+  margin: 0;
+  color: #f4efe4;
+  font-size: 13px;
+}
+
+.neutral-actions {
+  grid-template-columns: minmax(170px, 0.8fr) minmax(220px, 1fr);
+  max-width: 560px;
+}
+
+.neutral-actions h2,
+.neutral-actions > button {
+  grid-column: 1 / -1;
+}
+
+.neutral-actions .selection-summary,
+.neutral-actions .bonus-stepper-grid {
+  grid-column: 1;
+}
+
+.neutral-actions .mini-action-row,
+.neutral-actions .cube-button-row {
+  grid-column: 2;
+}
+
 .direct-section {
   display: grid;
   gap: 9px;
@@ -962,6 +1215,12 @@ select {
   box-shadow: inset 0 0 110px #000000d0;
 }
 
+.play-shell .board-scene .board-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
 .board-scene .board-panel::after {
   content: "";
   position: absolute;
@@ -1042,6 +1301,15 @@ select {
   min-width: 78%;
   min-height: 78%;
   max-width: none;
+}
+
+.play-shell .board-scene .board-viewport {
+  padding: 86px 20px 162px;
+}
+
+.play-shell .board-scene .board-viewport svg {
+  min-width: 90%;
+  min-height: 90%;
 }
 
 .hex {
@@ -1483,6 +1751,41 @@ details pre {
     overflow: auto;
   }
 
+  .play-shell {
+    height: 100vh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .play-hud {
+    grid-template-columns: minmax(150px, 1fr) auto;
+  }
+
+  .hud-player-row {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .play-shell .board-hud {
+    top: 132px;
+    width: min(720px, calc(100vw - 24px));
+  }
+
+  .play-history-tray {
+    top: 132px;
+  }
+
+  .context-action-strip {
+    bottom: 230px;
+    justify-content: start;
+  }
+
+  .play-shell .board-scene .board-viewport {
+    padding-top: 150px;
+    padding-bottom: 190px;
+  }
+
   .player-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -1560,6 +1863,51 @@ details pre {
 }
 
 @media (max-width: 760px) {
+  .play-hud {
+    left: 8px;
+    right: 8px;
+    grid-template-columns: 1fr;
+  }
+
+  .hud-player-row {
+    grid-template-columns: 1fr;
+  }
+
+  .hud-player {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .hud-cubes {
+    grid-column: 1 / -1;
+  }
+
+  .play-shell .board-hud {
+    top: 236px;
+  }
+
+  .play-history-tray {
+    top: 236px;
+    right: 8px;
+  }
+
+  .context-action-strip {
+    left: 8px;
+    right: 8px;
+    bottom: 250px;
+    width: auto;
+    transform: none;
+  }
+
+  .play-shell .board-scene .board-viewport {
+    padding-top: 250px;
+    padding-bottom: 230px;
+  }
+
+  .play-shell .card-use-strip,
+  .play-shell .selected-card-actions {
+    grid-template-columns: 1fr;
+  }
+
   .payment-grid,
   .name-grid {
     grid-template-columns: 1fr;

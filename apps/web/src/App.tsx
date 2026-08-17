@@ -52,21 +52,32 @@ const modeLabels: Record<CardUseMode, string> = {
 const GuidancePanel = ({
   guidance,
   children,
+  compact = false,
 }: {
   guidance: GameGuidance;
   children?: ReactNode;
+  compact?: boolean;
 }) => (
-  <section className={`turn-guide focus-${guidance.focus}`} aria-label="今やること">
-    <div className="guide-copy">
-      <span className="guide-eyebrow">{guidance.eyebrow}</span>
-      <h2>{guidance.title}</h2>
-      <p>{guidance.detail}</p>
-    </div>
-    <div className="guide-cue">
-      <span>{guidance.target}</span>
-      <strong>{guidance.required[0]}</strong>
-    </div>
-    {Children.count(children) > 0 ? <div className="guide-controls">{children}</div> : null}
+  <section className={`turn-guide ${compact ? "compact-guide" : ""} focus-${guidance.focus}`} aria-label="今やること">
+    {compact ? (
+      <>
+        <strong>{guidance.title}</strong>
+        <span>{guidance.required[0]}</span>
+      </>
+    ) : (
+      <>
+        <div className="guide-copy">
+          <span className="guide-eyebrow">{guidance.eyebrow}</span>
+          <h2>{guidance.title}</h2>
+          <p>{guidance.detail}</p>
+        </div>
+        <div className="guide-cue">
+          <span>{guidance.target}</span>
+          <strong>{guidance.required[0]}</strong>
+        </div>
+        {Children.count(children) > 0 ? <div className="guide-controls">{children}</div> : null}
+      </>
+    )}
   </section>
 );
 
@@ -401,6 +412,9 @@ export const App = () => {
 
   const isResultScene = state.status === "ended" || state.phase === "ended";
   const isDraftScene = state.phase === "draft";
+  const isPlayScene = state.phase === "action" && !isResultScene;
+  const canShowCityBuild = state.phase === "action" && state.legal.canBuildCity && state.legal.buildableIntersectionIds.length > 0;
+  const drawerHistory = isPlayScene ? state.history : olderHistory;
   const boardAreaSelection =
     turnEndDevelopment?.type === "neutral-development" ? neutralDevelopmentAreaId : endPlacementAreaId;
   const boardPlaceableAreaIds =
@@ -427,8 +441,8 @@ export const App = () => {
   const historyDrawer = (
     <details className="history history-drawer">
       <summary>行動履歴を開く</summary>
-      {olderHistory.length === 0 ? <p>なし</p> : null}
-      {olderHistory.map((entry) => (
+      {drawerHistory.length === 0 ? <p>なし</p> : null}
+      {drawerHistory.map((entry) => (
         <article key={entry.id}>
           <strong>R{entry.round} {entry.playerName}</strong>
           <span>{entry.summary}</span>
@@ -436,6 +450,55 @@ export const App = () => {
       ))}
     </details>
   );
+  const latestEventToast = latestHistory ? (
+    <aside className="latest-toast" aria-label="最新イベント">
+      <strong>R{latestHistory.round} {latestHistory.playerName}</strong>
+      <span>{latestHistory.summary}</span>
+    </aside>
+  ) : latestUnlock ? (
+    <aside className="latest-toast" aria-label="最新イベント">
+      <strong>{latestUnlock.playerName}</strong>
+      <span>世界Lv{latestUnlock.level} 解禁</span>
+    </aside>
+  ) : null;
+  const playHud = isPlayScene ? (
+    <header className="play-hud" aria-label="ゲーム情報">
+      <div className="hud-turn">
+        <strong>{state.currentPlayerName ?? "終了"}</strong>
+        <span>Round {state.round}/{state.maxRounds} · WORLD Lv{state.worldLevel}</span>
+      </div>
+      <div className="hud-player-row" aria-label="プレイヤー">
+        {state.players.map((player) => (
+          <article
+            key={player.id}
+            className={`hud-player ${player.id === state.currentPlayerId ? "active" : ""}`}
+            style={{ borderColor: player.color }}
+          >
+            <strong>{player.name}</strong>
+            <span>貢献 {player.contribution}</span>
+            <span>都市 {player.cityCount}</span>
+            <span className="hud-cubes">
+              R{player.cubes.red} B{player.cubes.blue} Y{player.cubes.yellow}
+            </span>
+          </article>
+        ))}
+      </div>
+      <div className="icon-actions hud-tools">
+        <button aria-label="Simulation Viewer" onClick={() => setViewMode("simulation")}>
+          Sim
+        </button>
+        <button aria-label="New game" onClick={newGame}>
+          <UserPlus size={18} />
+        </button>
+        <button aria-label="Undo" onClick={undo} disabled={!state.legal.canUndo}>
+          <Undo2 size={18} />
+        </button>
+        <button aria-label="Reset" onClick={reset}>
+          <RotateCcw size={18} />
+        </button>
+      </div>
+    </header>
+  ) : null;
   const board = (
     <Board
       state={state}
@@ -447,7 +510,7 @@ export const App = () => {
       onIntersectionSelect={buildCityAt}
     />
   );
-  const guidanceControls = guidance ? <GuidancePanel guidance={guidance} /> : null;
+  const guidanceControls = guidance ? <GuidancePanel guidance={guidance} compact={isPlayScene} /> : null;
   const draftCards = isDraftScene ? (
     <aside className="card-panel draft-table" aria-label="カード選択">
       <section className="actions card-actions">
@@ -470,8 +533,8 @@ export const App = () => {
         {state.turnCardUsed ? (
           <p className="hint">
             {state.pendingWorldLevelBonus
-              ? "カード使用済み。解禁ボーナス選択後に手番を続けられます。"
-              : "カード使用済み。都市建設後に手番終了できます。"}
+              ? "解禁ボーナスを選んでください。"
+              : "盤面で配置先を選ぶか、手番を終了します。"}
           </p>
         ) : null}
         <div className="card-list hand-card-list" aria-label="手札">
@@ -490,10 +553,11 @@ export const App = () => {
           <div className="card-use-strip" aria-label={`${selectedCardForAction.name}の使い方`}>
             <div className={`selected-action-card card-${selectedCardForAction.color}`}>
               <strong>{selectedCardForAction.name}</strong>
-              <div className="selected-card-texts">
+              <details className="selected-card-details">
+                <summary>詳細</summary>
                 <p><span>行動</span>{selectedCardForAction.actionText}</p>
                 {selectedCardForAction.color !== "multi" ? <p><span>得点</span>{selectedCardForAction.scoringText}</p> : null}
-              </div>
+              </details>
             </div>
             <div className="selected-card-actions">
               {availableUseModes.map((candidate) => candidate === "basic" ? (
@@ -527,12 +591,14 @@ export const App = () => {
       </section>
     </aside>
   ) : null;
-  const operations = state.phase === "action" ? (
-    <aside className="operations-panel direct-action-dock" aria-label="都市建設・エリア開発">
+  const hasContextActions =
+    state.phase === "action" &&
+    (Boolean(state.pendingWorldLevelBonus) || canShowCityBuild || (state.turnCardUsed && !state.pendingWorldLevelBonus));
+  const contextActions = hasContextActions ? (
+    <section className="context-action-strip" aria-label="都市建設・エリア開発">
       {state.pendingWorldLevelBonus ? (
-        <section className="actions direct-section world-bonus">
+        <section className="action-cluster world-bonus">
           <h2>世界Lvボーナス</h2>
-          <p className="hint">得るキューブを直接選びます。</p>
           <div className="cube-button-row" aria-label="解禁ボーナス">
             {cubeColors.map((color) => (
               <button
@@ -548,23 +614,22 @@ export const App = () => {
         </section>
       ) : null}
 
-      <section className="actions direct-section city-build-actions">
+      {canShowCityBuild ? (
+      <section className="action-cluster city-build-actions">
         <h2>都市建設</h2>
         <p className="direct-hint">
-          {state.legal.canBuildCity
-            ? "光る交点をクリックで即建設"
-            : "建設できる交点はありません"}
+          光る交点をクリック
         </p>
         <p className="hint">
-          コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点のLvと同数"}。カードは消費しません。
+          コスト {selectedBuildLevel ? `各${selectedBuildLevel}` : "交点Lv分"}
         </p>
       </section>
+      ) : null}
 
       {state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
-        <section className="actions direct-section development-actions">
+        <section className="action-cluster development-actions">
           <h2>ターン終了時配置</h2>
           {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
-          <p className="direct-hint">色を選び、光るHEXをクリックで配置して終了</p>
           <div className="cube-button-row" aria-label="配置色">
             {cubeColors.map((color) => (
               <button
@@ -584,9 +649,8 @@ export const App = () => {
       ) : null}
 
       {state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
-        <section className="actions direct-section development-actions">
+        <section className="action-cluster development-actions">
           <h2>三色都市の開発</h2>
-          <p className="hint">異なる2エリアへ最大1個ずつ配置できます。</p>
           <div className="cube-button-row" aria-label="次の配置色">
             {cubeColors.map((color) => (
               <button
@@ -624,9 +688,8 @@ export const App = () => {
       ) : null}
 
       {state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
-        <section className="actions direct-section development-actions">
+        <section className="action-cluster development-actions neutral-actions">
           <h2>中立開発</h2>
-          <p className="direct-hint">対象HEXをクリックし、配置数と色を選びます。</p>
           <div className="selection-summary" aria-label="中立開発の対象">
             <span>対象: {neutralDevelopmentAreaId || "未選択"}</span>
             <span>現在色: {selectedNeutralDevelopmentArea ? areaColorLabels[selectedNeutralDevelopmentArea.areaColor] : "未選択"}</span>
@@ -699,41 +762,45 @@ export const App = () => {
           </button>
         </section>
       ) : null}
-    </aside>
+    </section>
   ) : null;
 
   return (
-    <main className={`app-shell focus-${guidance?.focus ?? "setup"}`}>
-      <header className="topbar">
-        <div>
-          <h1>Hex Cube Cities</h1>
-          <p>
-            Round {state.round} / {state.maxRounds} · {state.phase === "draft" ? "ドラフト" : state.phase === "action" ? "アクション" : "終了"} · 世界Lv {state.worldLevel} ·
-            最大都市Lv {state.cityLevel} · 容量 {state.areaCapacity} · 盤面 {state.boardCubeTotal}
-          </p>
-          <p>{worldLevelStatus}</p>
-        </div>
-        <div className="turn-block">
-          <span>手番</span>
-          <strong>{state.currentPlayerName ?? "終了"}</strong>
-        </div>
-        <div className="icon-actions">
-          <button aria-label="Simulation Viewer" onClick={() => setViewMode("simulation")}>
-            Sim
-          </button>
-          <button aria-label="New game" onClick={newGame}>
-            <UserPlus size={18} />
-          </button>
-          <button aria-label="Undo" onClick={undo} disabled={!state.legal.canUndo}>
-            <Undo2 size={18} />
-          </button>
-          <button aria-label="Reset" onClick={reset}>
-            <RotateCcw size={18} />
-          </button>
-        </div>
-      </header>
+    <main className={`app-shell ${isPlayScene ? "play-shell" : ""} focus-${guidance?.focus ?? "setup"}`}>
+      {!isPlayScene ? (
+        <>
+          <header className="topbar">
+            <div>
+              <h1>Hex Cube Cities</h1>
+              <p>
+                Round {state.round} / {state.maxRounds} · {state.phase === "draft" ? "ドラフト" : state.phase === "action" ? "アクション" : "終了"} · 世界Lv {state.worldLevel} ·
+                最大都市Lv {state.cityLevel} · 容量 {state.areaCapacity} · 盤面 {state.boardCubeTotal}
+              </p>
+              <p>{worldLevelStatus}</p>
+            </div>
+            <div className="turn-block">
+              <span>手番</span>
+              <strong>{state.currentPlayerName ?? "終了"}</strong>
+            </div>
+            <div className="icon-actions">
+              <button aria-label="Simulation Viewer" onClick={() => setViewMode("simulation")}>
+                Sim
+              </button>
+              <button aria-label="New game" onClick={newGame}>
+                <UserPlus size={18} />
+              </button>
+              <button aria-label="Undo" onClick={undo} disabled={!state.legal.canUndo}>
+                <Undo2 size={18} />
+              </button>
+              <button aria-label="Reset" onClick={reset}>
+                <RotateCcw size={18} />
+              </button>
+            </div>
+          </header>
 
-      <PlayerStrip players={state.players} currentPlayerId={state.currentPlayerId} />
+          <PlayerStrip players={state.players} currentPlayerId={state.currentPlayerId} />
+        </>
+      ) : null}
 
       {error ? <p className="error scene-error">{error}</p> : null}
 
@@ -765,14 +832,15 @@ export const App = () => {
         </section>
       ) : (
         <section className="game-scene board-scene">
+          {playHud}
           {board}
           <div className="board-hud">
             {guidanceControls}
           </div>
-          {operations}
+          {contextActions}
           {handCards}
-          <aside className="right-panel table-log">
-            {latestEvent}
+          <aside className="play-history-tray">
+            {latestEventToast}
             {historyDrawer}
           </aside>
         </section>
