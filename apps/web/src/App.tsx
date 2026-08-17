@@ -116,7 +116,10 @@ export const App = () => {
     setBuildIntersectionId("");
   }, [state?.currentPlayerId, state?.phase, state?.round]);
 
-  const selectedCardForAction = currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ?? null;
+  const selectedCardForAction =
+    currentPlayer?.handCards.find((card) => card.instanceId === selectedCardId) ??
+    currentPlayer?.handCards[0] ??
+    null;
   const availableUseModes: CardUseMode[] = selectedCardForAction?.color === "multi"
     ? ["production", "basic"]
     : ["production", "scoring", "basic"];
@@ -127,11 +130,7 @@ export const App = () => {
     }
   }, [selectedCardForAction?.instanceId, selectedCardForAction?.color, useMode]);
   const endPlacementCapacity = state?.legal.turnEndAreaCapacity ?? 0;
-  const selectedEndPlacementArea =
-    state?.areas.find((area) => area.id === endPlacementAreaId) ?? null;
   const placeableAreaIds = state?.legal.placeableAreaIds ?? [];
-  const canPlaceSelectedArea =
-    !!selectedEndPlacementArea && placeableAreaIds.includes(selectedEndPlacementArea.id);
   const selectedBuildIntersection =
     state?.intersections.find((intersection) => intersection.id === buildIntersectionId) ?? null;
   const selectedBuildLevel =
@@ -154,14 +153,6 @@ export const App = () => {
   const tricolorSelectedAreaIds = [endPlacementAreaId, secondPlacementAreaId].filter(Boolean);
   const tricolorHasDuplicateArea =
     new Set(tricolorSelectedAreaIds).size !== tricolorSelectedAreaIds.length;
-  const tricolorRequiredCubes = emptyCubeCounts();
-  if (endPlacementAreaId) tricolorRequiredCubes[endPlacementColor] += 1;
-  if (secondPlacementAreaId) tricolorRequiredCubes[secondPlacementColor] += 1;
-  const tricolorCanPlace =
-    !tricolorHasDuplicateArea &&
-    (!endPlacementAreaId || placeableAreaIds.includes(endPlacementAreaId)) &&
-    (!secondPlacementAreaId || placeableAreaIds.includes(secondPlacementAreaId)) &&
-    cubeColors.every((color) => (currentPlayer?.cubes[color] ?? 0) >= tricolorRequiredCubes[color]);
   const neutralRequiredCubes = emptyCubeCounts();
   if (neutralPlacementCount >= 1) neutralRequiredCubes[neutralFirstColor] += 1;
   if (neutralPlacementCount >= 2) neutralRequiredCubes[neutralSecondColor] += 1;
@@ -227,24 +218,32 @@ export const App = () => {
     });
   };
 
-  const confirmUseCard = () => {
-    if (!state?.currentPlayerId || !selectedCardForAction) return;
+  const useCard = (card: CardSummary, mode: CardUseMode, color?: CubeColor) => {
+    if (!state?.currentPlayerId) return;
     const action: Extract<GameAction, { type: "USE_CARD" }> = {
       type: "USE_CARD",
       playerId: state.currentPlayerId,
-      cardInstanceId: selectedCardForAction.instanceId,
-      mode: useMode,
+      cardInstanceId: card.instanceId,
+      mode,
     };
-    if (useMode === "basic") action.basicColor = basicColor;
+    if (mode === "basic") action.basicColor = color ?? basicColor;
     void sendAction(action);
   };
 
-  const confirmBuild = () => {
-    if (!state?.currentPlayerId || !buildIntersectionId) return;
+  const useSelectedCard = (mode: CardUseMode, color?: CubeColor) => {
+    if (!selectedCardForAction) return;
+    setUseMode(mode);
+    if (color) setBasicColor(color);
+    useCard(selectedCardForAction, mode, color);
+  };
+
+  const buildCityAt = (intersectionId: string) => {
+    if (!state?.currentPlayerId || !state.legal.buildableIntersectionIds.includes(intersectionId)) return;
+    setBuildIntersectionId(intersectionId);
     void sendAction({
       type: "BUILD_CITY",
       playerId: state.currentPlayerId,
-      intersectionId: buildIntersectionId,
+      intersectionId,
     });
   };
 
@@ -295,6 +294,51 @@ export const App = () => {
       playerId: state.currentPlayerId,
       color,
     });
+  };
+
+  const currentPlayerHasCube = (color: CubeColor) => (currentPlayer?.cubes[color] ?? 0) > 0;
+
+  const choosePlacementColor = (color: CubeColor) => {
+    if (turnEndDevelopment?.type === "tricolor-city" && endPlacementAreaId) {
+      setSecondPlacementColor(color);
+      return;
+    }
+    setEndPlacementColor(color);
+  };
+
+  const selectDevelopmentArea = (areaId: string) => {
+    if (!state?.currentPlayerId || state.phase !== "action" || !state.turnCardUsed || state.pendingWorldLevelBonus) return;
+
+    if (turnEndDevelopment?.type === "neutral-development") {
+      setNeutralDevelopmentAreaId(areaId);
+      return;
+    }
+
+    if (!placeableAreaIds.includes(areaId)) return;
+
+    if (turnEndDevelopment?.type === "tricolor-city") {
+      if (!endPlacementAreaId || areaId === endPlacementAreaId) {
+        setEndPlacementAreaId(areaId);
+        return;
+      }
+      setSecondPlacementAreaId(areaId);
+      return;
+    }
+
+    setEndPlacementAreaId(areaId);
+    if (!currentPlayerHasCube(endPlacementColor)) return;
+    void sendAction({
+      type: "END_TURN",
+      playerId: state.currentPlayerId,
+      placement: {
+        areaId,
+        color: endPlacementColor,
+      },
+    });
+  };
+
+  const adjustNeutralBonus = (color: CubeColor, delta: number) => {
+    updateNeutralBonus(color, neutralBonusCubes[color] + delta);
   };
 
   const updateNeutralBonus = (color: CubeColor, value: number) => {
@@ -363,10 +407,6 @@ export const App = () => {
     turnEndDevelopment?.type === "neutral-development"
       ? state.areas.map((area) => area.id)
       : placeableAreaIds;
-  const selectBoardArea =
-    turnEndDevelopment?.type === "neutral-development"
-      ? setNeutralDevelopmentAreaId
-      : setEndPlacementAreaId;
   const latestEvent = (
     <section className="history latest-history" aria-label="最新イベント">
       <h2>最新イベント</h2>
@@ -403,70 +443,11 @@ export const App = () => {
       selectedIntersectionId={buildIntersectionId}
       placeableAreaIds={boardPlaceableAreaIds}
       buildableIntersectionIds={state.legal.buildableIntersectionIds}
-      onAreaSelect={selectBoardArea}
-      onIntersectionSelect={setBuildIntersectionId}
+      onAreaSelect={selectDevelopmentArea}
+      onIntersectionSelect={buildCityAt}
     />
   );
-  const guidanceControls = guidance ? (
-    <GuidancePanel guidance={guidance}>
-      {state.phase === "action" && state.pendingWorldLevelBonus ? (
-        <div className="bonus-buttons guided-choice" aria-label="解禁ボーナス">
-          {cubeColors.map((color) => (
-            <button
-              key={color}
-              className={`cube-choice ${color}`}
-              onClick={() => claimWorldLevelBonus(color)}
-              disabled={!state.legal.canClaimWorldLevelBonus}
-            >
-              {colorLabels[color]}
-            </button>
-          ))}
-        </div>
-      ) : null}
-
-      {state.phase === "action" && !state.turnCardUsed ? (
-        <>
-          {selectedCardForAction ? (
-            <article className={`selected-action-card card-${selectedCardForAction.color}`}>
-              <strong>{selectedCardForAction.name}</strong>
-              <p>{useMode === "scoring" ? selectedCardForAction.scoringText : selectedCardForAction.actionText}</p>
-            </article>
-          ) : null}
-          <div className="mode-tabs guided-modes" role="tablist" aria-label="カード用途">
-            {availableUseModes.map((candidate) => (
-              <button
-                key={candidate}
-                className={useMode === candidate ? "selected" : ""}
-                onClick={() => setUseMode(candidate)}
-                disabled={state.turnCardUsed || !selectedCardForAction}
-              >
-                {candidate === "production"
-                  ? selectedCardForAction?.color === "multi" ? "行動" : "生産"
-                  : modeLabels[candidate]}
-              </button>
-            ))}
-          </div>
-
-          {useMode === "basic" ? (
-            <label className="guided-field">
-              取得色
-              <select value={basicColor} onChange={(event) => setBasicColor(event.target.value as CubeColor)}>
-                {cubeColors.map((color) => (
-                  <option key={color} value={color}>
-                    {colorLabels[color]}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-
-          <button className="primary guide-primary" onClick={confirmUseCard} disabled={!state.legal.canUseCard || !selectedCardForAction}>
-            カードを使用
-          </button>
-        </>
-      ) : null}
-    </GuidancePanel>
-  ) : null;
+  const guidanceControls = guidance ? <GuidancePanel guidance={guidance} /> : null;
   const draftCards = isDraftScene ? (
     <aside className="card-panel draft-table" aria-label="カード選択">
       <section className="actions card-actions">
@@ -482,7 +463,10 @@ export const App = () => {
   const handCards = state.phase === "action" ? (
     <aside className="card-panel hand-rail" aria-label="カード選択">
       <section className="actions card-actions">
-        <h2>カード選択</h2>
+        <div className="rail-heading">
+          <h2>手札</h2>
+          {selectedCardForAction && !state.turnCardUsed ? <span>{selectedCardForAction.name}</span> : null}
+        </div>
         {state.turnCardUsed ? (
           <p className="hint">
             {state.pendingWorldLevelBonus
@@ -496,91 +480,103 @@ export const App = () => {
               key={card.instanceId}
               card={card}
               density="compact"
-              selected={card.instanceId === selectedCardId}
+              selected={card.instanceId === selectedCardForAction?.instanceId}
               disabled={state.turnCardUsed}
               onSelect={(nextCard) => setSelectedCardId(nextCard.instanceId)}
             />
           ))}
         </div>
+        {!state.turnCardUsed && selectedCardForAction ? (
+          <div className="card-use-strip" aria-label={`${selectedCardForAction.name}の使い方`}>
+            <div className={`selected-action-card card-${selectedCardForAction.color}`}>
+              <strong>{selectedCardForAction.name}</strong>
+              <div className="selected-card-texts">
+                <p><span>行動</span>{selectedCardForAction.actionText}</p>
+                {selectedCardForAction.color !== "multi" ? <p><span>得点</span>{selectedCardForAction.scoringText}</p> : null}
+              </div>
+            </div>
+            <div className="selected-card-actions">
+              {availableUseModes.map((candidate) => candidate === "basic" ? (
+                <div key={candidate} className="basic-use-group" aria-label="基本取得">
+                  {cubeColors.map((color) => (
+                    <button
+                      key={color}
+                      className={`cube-choice ${color}`}
+                      onClick={() => useSelectedCard("basic", color)}
+                      disabled={!state.legal.canUseCard}
+                    >
+                      基本取得 {colorLabels[color]}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <button
+                  key={candidate}
+                  className={candidate === "production" ? "primary" : "secondary"}
+                  onClick={() => useSelectedCard(candidate)}
+                  disabled={!state.legal.canUseCard}
+                >
+                  {candidate === "production"
+                    ? selectedCardForAction.color === "multi" ? "行動" : "生産"
+                    : modeLabels[candidate]}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </section>
     </aside>
   ) : null;
   const operations = state.phase === "action" ? (
-    <aside className="operations-panel" aria-label="都市建設・エリア開発">
-      <section className="actions city-build-actions">
+    <aside className="operations-panel direct-action-dock" aria-label="都市建設・エリア開発">
+      {state.pendingWorldLevelBonus ? (
+        <section className="actions direct-section world-bonus">
+          <h2>世界Lvボーナス</h2>
+          <p className="hint">得るキューブを直接選びます。</p>
+          <div className="cube-button-row" aria-label="解禁ボーナス">
+            {cubeColors.map((color) => (
+              <button
+                key={color}
+                className={`cube-choice ${color}`}
+                onClick={() => claimWorldLevelBonus(color)}
+                disabled={!state.legal.canClaimWorldLevelBonus}
+              >
+                {colorLabels[color]}
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <section className="actions direct-section city-build-actions">
         <h2>都市建設</h2>
-        <label>
-          交点
-          <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
-            <option value="">選択</option>
-            {state.intersections
-              .map((intersection) => (
-                <option
-                  key={intersection.id}
-                  value={intersection.id}
-                  disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
-                >
-                  {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
-                  {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
-                </option>
-              ))}
-          </select>
-        </label>
-        <p className="hint">
-          コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+        <p className="direct-hint">
+          {state.legal.canBuildCity
+            ? "光る交点をクリックで即建設"
+            : "建設できる交点はありません"}
         </p>
-        <button
-          className="primary wide"
-          onClick={confirmBuild}
-          disabled={
-            !state.legal.canBuildCity ||
-            !buildIntersectionId ||
-            !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
-          }
-        >
-          都市を建設
-        </button>
+        <p className="hint">
+          コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点のLvと同数"}。カードは消費しません。
+        </p>
       </section>
 
       {state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
-        <section className="actions development-actions">
+        <section className="actions direct-section development-actions">
           <h2>ターン終了時配置</h2>
           {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
-          <div className="payment-grid">
-            <label>
-              色
-              <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
-                {cubeColors.map((color) => (
-                  <option key={color} value={color}>
-                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              エリア
-              <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
-                <option value="">選択</option>
-                {state.areas.map((area) => (
-                  <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
-                    {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <p className="direct-hint">色を選び、光るHEXをクリックで配置して終了</p>
+          <div className="cube-button-row" aria-label="配置色">
+            {cubeColors.map((color) => (
+              <button
+                key={color}
+                className={`cube-choice ${color} ${endPlacementColor === color ? "selected" : ""}`}
+                onClick={() => choosePlacementColor(color)}
+                disabled={(currentPlayer?.cubes[color] ?? 0) < 1}
+              >
+                {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+              </button>
+            ))}
           </div>
-          <button
-            className="primary wide"
-            onClick={() => endTurn(true)}
-            disabled={
-              !state.legal.canEndTurn ||
-              !endPlacementAreaId ||
-              !canPlaceSelectedArea ||
-              (currentPlayer?.cubes[endPlacementColor] ?? 0) < 1
-            }
-          >
-            1個置いて手番終了
-          </button>
           <button className="secondary wide" onClick={() => endTurn(false)} disabled={!state.legal.canEndTurn}>
             置かずに手番終了
           </button>
@@ -588,58 +584,26 @@ export const App = () => {
       ) : null}
 
       {state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
-        <section className="actions development-actions">
+        <section className="actions direct-section development-actions">
           <h2>三色都市の開発</h2>
-          <p className="hint">異なる2エリアへ最大1個ずつ配置できます。開発後、条件を満たせば赤青黄を1個ずつ得ます。</p>
-          <div className="payment-grid">
-            <label>
-              1個目 色
-              <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
-                {cubeColors.map((color) => (
-                  <option key={color} value={color}>
-                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              1個目 エリア
-              <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
-                <option value="">スキップ</option>
-                {state.areas.map((area) => (
-                  <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
-                    {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              2個目 色
-              <select value={secondPlacementColor} onChange={(event) => setSecondPlacementColor(event.target.value as CubeColor)}>
-                {cubeColors.map((color) => (
-                  <option key={color} value={color}>
-                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              2個目 エリア
-              <select value={secondPlacementAreaId} onChange={(event) => setSecondPlacementAreaId(event.target.value)}>
-                <option value="">スキップ</option>
-                {state.areas.map((area) => (
-                  <option
-                    key={area.id}
-                    value={area.id}
-                    disabled={!placeableAreaIds.includes(area.id) || area.id === endPlacementAreaId}
-                  >
-                    {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <p className="hint">異なる2エリアへ最大1個ずつ配置できます。</p>
+          <div className="cube-button-row" aria-label="次の配置色">
+            {cubeColors.map((color) => (
+              <button
+                key={color}
+                className={`cube-choice ${color} ${(endPlacementAreaId ? secondPlacementColor : endPlacementColor) === color ? "selected" : ""}`}
+                onClick={() => choosePlacementColor(color)}
+                disabled={(currentPlayer?.cubes[color] ?? 0) < 1}
+              >
+                {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+              </button>
+            ))}
           </div>
-          <button className="primary wide" onClick={endTricolorTurn} disabled={!state.legal.canEndTurn || !tricolorCanPlace}>
+          <div className="selection-summary" aria-label="三色都市の配置選択">
+            <span>1個目: {endPlacementAreaId || "未選択"} / {colorLabels[endPlacementColor]}</span>
+            <span>2個目: {secondPlacementAreaId || "未選択"} / {colorLabels[secondPlacementColor]}</span>
+          </div>
+          <button className="primary wide" onClick={endTricolorTurn} disabled={!state.legal.canEndTurn || tricolorHasDuplicateArea}>
             選択分を置いて手番終了
           </button>
           <button
@@ -660,71 +624,73 @@ export const App = () => {
       ) : null}
 
       {state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
-        <section className="actions development-actions">
+        <section className="actions direct-section development-actions">
           <h2>中立開発</h2>
-          <p className="hint">対象エリア1つへ最大2個配置できます。開発後に中立なら隣接都市数だけ任意色を得ます。</p>
-          <label>
-            対象エリア
-            <select value={neutralDevelopmentAreaId} onChange={(event) => setNeutralDevelopmentAreaId(event.target.value)}>
-              <option value="">選択</option>
-              {state.areas.map((area) => (
-                <option key={area.id} value={area.id}>
-                  {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            配置数
-            <select value={neutralPlacementCount} onChange={(event) => setNeutralPlacementCount(Number(event.target.value))}>
-              {[0, 1, 2].map((count) => (
-                <option key={count} value={count}>
-                  {count}
-                </option>
-              ))}
-            </select>
-          </label>
+          <p className="direct-hint">対象HEXをクリックし、配置数と色を選びます。</p>
+          <div className="selection-summary" aria-label="中立開発の対象">
+            <span>対象: {neutralDevelopmentAreaId || "未選択"}</span>
+            <span>現在色: {selectedNeutralDevelopmentArea ? areaColorLabels[selectedNeutralDevelopmentArea.areaColor] : "未選択"}</span>
+            <span>任意色取得上限: {neutralAdjacentCityPieces}個</span>
+          </div>
+          <div className="mini-action-row" aria-label="配置数">
+            {[0, 1, 2].map((count) => (
+              <button
+                key={count}
+                className={neutralPlacementCount === count ? "selected" : ""}
+                onClick={() => setNeutralPlacementCount(count)}
+              >
+                {count}個配置
+              </button>
+            ))}
+          </div>
           {neutralPlacementCount >= 1 ? (
-            <label>
-              1個目 色
-              <select value={neutralFirstColor} onChange={(event) => setNeutralFirstColor(event.target.value as CubeColor)}>
-                {cubeColors.map((color) => (
-                  <option key={color} value={color}>
-                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="cube-button-row" aria-label="中立開発 1個目 色">
+              {cubeColors.map((color) => (
+                <button
+                  key={color}
+                  className={`cube-choice ${color} ${neutralFirstColor === color ? "selected" : ""}`}
+                  onClick={() => setNeutralFirstColor(color)}
+                  disabled={(currentPlayer?.cubes[color] ?? 0) < 1}
+                >
+                  1個目 {colorLabels[color]}
+                </button>
+              ))}
+            </div>
           ) : null}
           {neutralPlacementCount >= 2 ? (
-            <label>
-              2個目 色
-              <select value={neutralSecondColor} onChange={(event) => setNeutralSecondColor(event.target.value as CubeColor)}>
-                {cubeColors.map((color) => (
-                  <option key={color} value={color}>
-                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <p className="hint">
-            現在色: {selectedNeutralDevelopmentArea ? areaColorLabels[selectedNeutralDevelopmentArea.areaColor] : "未選択"} /
-            中立で解決される場合の任意色取得上限 {neutralAdjacentCityPieces}個
-          </p>
-          {neutralAdjacentCityPieces > 0 ? (
-            <div className="payment-grid">
+            <div className="cube-button-row" aria-label="中立開発 2個目 色">
               {cubeColors.map((color) => (
-                <label key={color}>
-                  {colorLabels[color]}取得
-                  <input
-                    type="number"
-                    min="0"
-                    max={neutralAdjacentCityPieces}
-                    value={neutralBonusCubes[color]}
-                    onChange={(event) => updateNeutralBonus(color, Number(event.target.value))}
-                  />
-                </label>
+                <button
+                  key={color}
+                  className={`cube-choice ${color} ${neutralSecondColor === color ? "selected" : ""}`}
+                  onClick={() => setNeutralSecondColor(color)}
+                  disabled={(currentPlayer?.cubes[color] ?? 0) < 1}
+                >
+                  2個目 {colorLabels[color]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {neutralAdjacentCityPieces > 0 ? (
+            <div className="bonus-stepper-grid" aria-label="中立ボーナス">
+              {cubeColors.map((color) => (
+                <div key={color} className="bonus-stepper">
+                  <span>{colorLabels[color]}取得 {neutralBonusCubes[color]}</span>
+                  <button
+                    aria-label={`${colorLabels[color]}取得を減らす`}
+                    onClick={() => adjustNeutralBonus(color, -1)}
+                    disabled={neutralBonusCubes[color] <= 0}
+                  >
+                    -
+                  </button>
+                  <button
+                    aria-label={`${colorLabels[color]}取得を増やす`}
+                    onClick={() => adjustNeutralBonus(color, 1)}
+                    disabled={neutralBonusTotal >= neutralAdjacentCityPieces}
+                  >
+                    +
+                  </button>
+                </div>
               ))}
             </div>
           ) : null}
