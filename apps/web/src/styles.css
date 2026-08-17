@@ -131,11 +131,15 @@ select {
 }
 
 .app-shell {
-  min-height: 100vh;
+  position: relative;
+  height: 100vh;
   padding: 10px;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   gap: 8px;
+  background:
+    radial-gradient(circle at 50% 44%, #26332f 0, #151c1b 47%, #0d1111 100%);
+  overflow: hidden;
 }
 
 .topbar {
@@ -143,11 +147,11 @@ select {
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 18px;
-  background: #161c1bdd;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: #101615d8;
+  border: 1px solid #ffffff14;
+  border-radius: 6px;
   padding: 8px 12px;
-  box-shadow: 0 8px 24px #00000040;
+  box-shadow: 0 10px 26px #00000045;
 }
 
 .topbar p,
@@ -155,6 +159,10 @@ select {
   margin: 3px 0 0;
   color: var(--muted);
   line-height: 1.25;
+}
+
+.topbar p {
+  font-size: 13px;
 }
 
 .turn-block {
@@ -192,17 +200,22 @@ select {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 8px;
+  min-height: 0;
 }
 
 .player-card {
   position: relative;
   overflow: hidden;
-  background: #1d2423f2;
-  border: 1px solid var(--line);
-  border-top: 5px solid;
-  border-radius: 8px;
-  padding: 8px 10px;
-  box-shadow: 0 8px 20px #00000038;
+  background: #151c1bcc;
+  border: 1px solid #ffffff16;
+  border-top: 4px solid;
+  border-radius: 6px;
+  padding: 7px 9px;
+  box-shadow: 0 8px 18px #00000030;
+}
+
+.player-card p {
+  font-size: 12px;
 }
 
 .player-card.active {
@@ -228,12 +241,12 @@ select {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
-  margin-top: 6px;
+  margin-top: 5px;
 }
 
 .cube-pill {
   border-radius: 5px;
-  padding: 3px 7px;
+  padding: 2px 7px;
   font-weight: 900;
   color: #ffffff;
   min-width: 54px;
@@ -253,6 +266,49 @@ select {
 .yellow {
   background: var(--yellow);
   color: #1f1b10;
+}
+
+.game-scene {
+  position: relative;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.board-scene {
+  display: grid;
+  grid-template-columns: minmax(250px, 0.42fr) minmax(560px, 1fr) minmax(230px, 0.34fr);
+  grid-template-rows: minmax(0, 1fr) minmax(96px, auto);
+  gap: 10px;
+  isolation: isolate;
+}
+
+.draft-scene {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+
+.result-scene {
+  display: grid;
+  grid-template-columns: minmax(420px, 0.8fr) minmax(240px, 320px);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.board-hud {
+  grid-area: 1 / 2 / 2 / 3;
+  align-self: start;
+  justify-self: center;
+  width: min(760px, 100%);
+  z-index: 4;
+  pointer-events: none;
+}
+
+.board-hud > * {
+  pointer-events: auto;
 }
 
 .workspace {
@@ -288,10 +344,31 @@ select {
   grid-area: cards;
 }
 
+.draft-table {
+  grid-area: 2 / 1 / 3 / 2;
+  align-content: stretch;
+}
+
+.hand-rail {
+  grid-area: 2 / 1 / 3 / 4;
+  z-index: 5;
+  align-self: end;
+  min-width: 0;
+}
+
 .operations-panel {
   grid-area: operations;
   min-height: 0;
   overflow: auto;
+}
+
+.board-scene .operations-panel {
+  grid-area: 1 / 1 / 2 / 2;
+  align-self: end;
+  z-index: 4;
+  max-height: min(100%, 72vh);
+  padding: 2px;
+  scrollbar-width: thin;
 }
 
 .right-panel {
@@ -300,16 +377,28 @@ select {
   overflow: hidden;
 }
 
+.table-log {
+  grid-area: 1 / 3 / 2 / 4;
+  align-self: start;
+  z-index: 4;
+  max-height: 100%;
+}
+
+.draft-scene .table-log,
+.result-scene .table-log {
+  grid-area: 1 / 2 / 3 / 3;
+}
+
 .turn-guide {
   grid-area: guide;
   display: grid;
-  grid-template-columns: minmax(260px, 1.2fr) minmax(140px, 0.45fr) minmax(220px, 0.8fr) minmax(190px, 0.7fr);
-  gap: 10px;
-  align-items: stretch;
-  background: linear-gradient(135deg, #25241ce8, #18211fe8 55%, #121817e8);
+  grid-template-columns: minmax(220px, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  background: linear-gradient(135deg, #25241cf0, #18211ff0 58%, #111716f0);
   border: 1px solid #837646;
-  border-radius: 8px;
-  padding: 10px;
+  border-radius: 6px;
+  padding: 8px 10px;
   box-shadow: 0 14px 36px #00000055, inset 0 0 32px #f3d77812;
 }
 
@@ -327,45 +416,33 @@ select {
 
 .turn-guide h2 {
   margin: 0;
-  font-size: 22px;
+  font-size: 18px;
 }
 
 .turn-guide p {
   margin: 0;
   color: var(--muted);
   line-height: 1.35;
+  font-size: 13px;
 }
 
-.guide-target,
-.guide-steps {
+.guide-cue {
   display: grid;
   gap: 4px;
-  align-content: center;
-  background: #101716c8;
-  border: 1px solid #4c554f;
-  border-radius: 7px;
-  padding: 8px;
+  justify-items: end;
+  min-width: 170px;
 }
 
-.guide-target span,
-.guide-steps strong {
+.guide-cue span {
   color: var(--muted);
   font-size: 12px;
   font-weight: 900;
 }
 
-.guide-target strong {
+.guide-cue strong {
   color: #f3d778;
-  font-size: 16px;
-}
-
-.guide-steps span {
-  color: var(--text);
+  font-size: 14px;
   font-weight: 800;
-}
-
-.guide-steps.optional span {
-  color: #c9c2b5;
 }
 
 .guide-controls {
@@ -423,11 +500,55 @@ select {
 .history,
 .results,
 .viewer-section {
-  background: #1b2221ef;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  background: #161d1cf0;
+  border: 1px solid #ffffff17;
+  border-radius: 6px;
   padding: 10px;
   box-shadow: 0 10px 24px #00000035;
+}
+
+.board-scene .actions,
+.board-scene .history {
+  background: #121817d8;
+  backdrop-filter: blur(8px);
+}
+
+.draft-scene .turn-guide,
+.result-scene .turn-guide {
+  grid-area: 1 / 1 / 2 / 2;
+}
+
+.draft-scene .card-actions {
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  padding: 14px;
+  background:
+    radial-gradient(circle at 50% 0, #3b3421a8, transparent 44%),
+    #151b1a40;
+  border-color: #f3d77833;
+  box-shadow: inset 0 0 70px #0000004a;
+}
+
+.draft-card-list {
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  align-content: center;
+  overflow: auto;
+}
+
+.result-scene .results {
+  grid-area: 2 / 1 / 3 / 2;
+  align-self: stretch;
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  padding: 28px;
+  border-color: #d8c26866;
+  box-shadow: 0 0 0 1px #d8c26833, 0 22px 70px #00000070;
+}
+
+.result-scene .results h2 {
+  font-size: 32px;
 }
 
 .actions h2,
@@ -487,6 +608,20 @@ select {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
+.hand-rail .actions {
+  padding: 7px 10px;
+  background: linear-gradient(180deg, #151b1ae8, #0d1211ef);
+}
+
+.hand-rail .actions h2 {
+  margin-bottom: 7px;
+  font-size: 14px;
+}
+
+.hand-rail .hand-card-list {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
 .game-card,
 .card-button,
 .selected-card {
@@ -509,15 +644,15 @@ select {
 }
 
 .game-card.density-compact {
-  min-height: 78px;
+  min-height: 68px;
 }
 
 .game-card.density-compact .game-card-band {
-  padding: 8px 10px;
+  padding: 6px 9px;
 }
 
 .game-card.density-compact .game-card-body {
-  padding: 7px 10px;
+  padding: 6px 9px;
 }
 
 .game-card.density-compact .game-card-body p {
@@ -645,6 +780,15 @@ select {
   font-weight: 800;
 }
 
+.scene-error {
+  position: absolute;
+  top: 108px;
+  right: 18px;
+  z-index: 20;
+  width: min(380px, calc(100vw - 36px));
+  box-shadow: 0 16px 36px #00000070;
+}
+
 .board-panel {
   grid-area: board;
   position: relative;
@@ -655,6 +799,24 @@ select {
   min-height: 0;
   overflow: hidden;
   box-shadow: var(--shadow), inset 0 0 90px #00000070;
+}
+
+.board-scene .board-panel {
+  grid-area: 1 / 1 / 2 / 4;
+  border: 0;
+  border-radius: 0;
+  background:
+    radial-gradient(circle at 50% 50%, #24312e 0, #141b1a 55%, #0a0d0d 100%);
+  box-shadow: inset 0 0 110px #000000d0;
+}
+
+.board-scene .board-panel::after {
+  content: "";
+  position: absolute;
+  inset: 5% 12% 12%;
+  pointer-events: none;
+  border: 1px solid #f1e2b41a;
+  box-shadow: inset 0 0 70px #f1e2b40b, 0 0 80px #00000070;
 }
 
 .board-panel::before {
@@ -718,6 +880,16 @@ select {
   display: block;
   min-width: 92%;
   min-height: 92%;
+}
+
+.board-scene .board-viewport {
+  padding: 34px 18px 22px;
+}
+
+.board-scene .board-viewport svg {
+  min-width: 78%;
+  min-height: 78%;
+  max-width: none;
 }
 
 .hex {
@@ -852,8 +1024,13 @@ select {
   max-height: none;
 }
 
+.table-log .latest-history {
+  font-size: 12px;
+}
+
 .history-drawer {
   opacity: 0.78;
+  max-height: 44vh;
 }
 
 .history-drawer summary {
@@ -895,7 +1072,7 @@ select {
 .focus-area .board-panel,
 .focus-city .board-panel {
   border-color: #f3d778;
-  box-shadow: 0 0 0 2px #f3d77855, var(--shadow), inset 0 0 90px #00000070;
+  box-shadow: 0 0 0 2px #f3d77855, var(--shadow), inset 0 0 110px #000000c8;
 }
 
 .focus-area .development-actions {

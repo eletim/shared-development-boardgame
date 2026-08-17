@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { Children, useEffect, useState, type ReactNode } from "react";
 import { RotateCcw, Undo2, UserPlus } from "lucide-react";
 import {
   cubeColors,
@@ -62,21 +62,11 @@ const GuidancePanel = ({
       <h2>{guidance.title}</h2>
       <p>{guidance.detail}</p>
     </div>
-    <div className="guide-target">
-      <span>操作対象</span>
-      <strong>{guidance.target}</strong>
+    <div className="guide-cue">
+      <span>{guidance.target}</span>
+      <strong>{guidance.required[0]}</strong>
     </div>
-    <div className="guide-steps" aria-label="必要な操作">
-      <strong>必須</strong>
-      {guidance.required.map((item) => <span key={item}>{item}</span>)}
-    </div>
-    {guidance.optional.length > 0 ? (
-      <div className="guide-steps optional" aria-label="任意操作">
-        <strong>任意</strong>
-        {guidance.optional.map((item) => <span key={item}>{item}</span>)}
-      </div>
-    ) : null}
-    {children ? <div className="guide-controls">{children}</div> : null}
+    {Children.count(children) > 0 ? <div className="guide-controls">{children}</div> : null}
   </section>
 );
 
@@ -365,6 +355,387 @@ export const App = () => {
     );
   }
 
+  const isResultScene = state.status === "ended" || state.phase === "ended";
+  const isDraftScene = state.phase === "draft";
+  const boardAreaSelection =
+    turnEndDevelopment?.type === "neutral-development" ? neutralDevelopmentAreaId : endPlacementAreaId;
+  const boardPlaceableAreaIds =
+    turnEndDevelopment?.type === "neutral-development"
+      ? state.areas.map((area) => area.id)
+      : placeableAreaIds;
+  const selectBoardArea =
+    turnEndDevelopment?.type === "neutral-development"
+      ? setNeutralDevelopmentAreaId
+      : setEndPlacementAreaId;
+  const latestEvent = (
+    <section className="history latest-history" aria-label="最新イベント">
+      <h2>最新イベント</h2>
+      {latestHistory ? (
+        <article>
+          <strong>R{latestHistory.round} {latestHistory.playerName}</strong>
+          <span>{latestHistory.summary}</span>
+        </article>
+      ) : latestUnlock ? (
+        <article>
+          <strong>{latestUnlock.playerName}</strong>
+          <span>世界Lv{latestUnlock.level}を解禁しました</span>
+          {latestUnlock.bonusColor ? <span>ボーナス: {colorLabels[latestUnlock.bonusColor]}</span> : null}
+        </article>
+      ) : <p>なし</p>}
+    </section>
+  );
+  const historyDrawer = (
+    <details className="history history-drawer">
+      <summary>行動履歴を開く</summary>
+      {olderHistory.length === 0 ? <p>なし</p> : null}
+      {olderHistory.map((entry) => (
+        <article key={entry.id}>
+          <strong>R{entry.round} {entry.playerName}</strong>
+          <span>{entry.summary}</span>
+        </article>
+      ))}
+    </details>
+  );
+  const board = (
+    <Board
+      state={state}
+      selectedAreaId={boardAreaSelection}
+      selectedIntersectionId={buildIntersectionId}
+      placeableAreaIds={boardPlaceableAreaIds}
+      buildableIntersectionIds={state.legal.buildableIntersectionIds}
+      onAreaSelect={selectBoardArea}
+      onIntersectionSelect={setBuildIntersectionId}
+    />
+  );
+  const guidanceControls = guidance ? (
+    <GuidancePanel guidance={guidance}>
+      {state.phase === "action" && state.pendingWorldLevelBonus ? (
+        <div className="bonus-buttons guided-choice" aria-label="解禁ボーナス">
+          {cubeColors.map((color) => (
+            <button
+              key={color}
+              className={`cube-choice ${color}`}
+              onClick={() => claimWorldLevelBonus(color)}
+              disabled={!state.legal.canClaimWorldLevelBonus}
+            >
+              {colorLabels[color]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {state.phase === "action" && !state.turnCardUsed ? (
+        <>
+          {selectedCardForAction ? (
+            <article className={`selected-action-card card-${selectedCardForAction.color}`}>
+              <strong>{selectedCardForAction.name}</strong>
+              <p>{useMode === "scoring" ? selectedCardForAction.scoringText : selectedCardForAction.actionText}</p>
+            </article>
+          ) : null}
+          <div className="mode-tabs guided-modes" role="tablist" aria-label="カード用途">
+            {availableUseModes.map((candidate) => (
+              <button
+                key={candidate}
+                className={useMode === candidate ? "selected" : ""}
+                onClick={() => setUseMode(candidate)}
+                disabled={state.turnCardUsed || !selectedCardForAction}
+              >
+                {candidate === "production"
+                  ? selectedCardForAction?.color === "multi" ? "行動" : "生産"
+                  : modeLabels[candidate]}
+              </button>
+            ))}
+          </div>
+
+          {useMode === "basic" ? (
+            <label className="guided-field">
+              取得色
+              <select value={basicColor} onChange={(event) => setBasicColor(event.target.value as CubeColor)}>
+                {cubeColors.map((color) => (
+                  <option key={color} value={color}>
+                    {colorLabels[color]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+
+          <button className="primary guide-primary" onClick={confirmUseCard} disabled={!state.legal.canUseCard || !selectedCardForAction}>
+            カードを使用
+          </button>
+        </>
+      ) : null}
+    </GuidancePanel>
+  ) : null;
+  const draftCards = isDraftScene ? (
+    <aside className="card-panel draft-table" aria-label="カード選択">
+      <section className="actions card-actions">
+        <h2>ドラフト {state.draftPickNumber} / 8</h2>
+        <div className="card-list draft-card-list">
+          {state.legal.draftPack.map((card) => (
+            <GameCard key={card.instanceId} card={card} onSelect={draftPick} />
+          ))}
+        </div>
+      </section>
+    </aside>
+  ) : null;
+  const handCards = state.phase === "action" ? (
+    <aside className="card-panel hand-rail" aria-label="カード選択">
+      <section className="actions card-actions">
+        <h2>カード選択</h2>
+        {state.turnCardUsed ? (
+          <p className="hint">
+            {state.pendingWorldLevelBonus
+              ? "カード使用済み。解禁ボーナス選択後に手番を続けられます。"
+              : "カード使用済み。都市建設後に手番終了できます。"}
+          </p>
+        ) : null}
+        <div className="card-list hand-card-list" aria-label="手札">
+          {currentPlayer?.handCards.map((card) => (
+            <GameCard
+              key={card.instanceId}
+              card={card}
+              density="compact"
+              selected={card.instanceId === selectedCardId}
+              disabled={state.turnCardUsed}
+              onSelect={(nextCard) => setSelectedCardId(nextCard.instanceId)}
+            />
+          ))}
+        </div>
+      </section>
+    </aside>
+  ) : null;
+  const operations = state.phase === "action" ? (
+    <aside className="operations-panel" aria-label="都市建設・エリア開発">
+      <section className="actions city-build-actions">
+        <h2>都市建設</h2>
+        <label>
+          交点
+          <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
+            <option value="">選択</option>
+            {state.intersections
+              .map((intersection) => (
+                <option
+                  key={intersection.id}
+                  value={intersection.id}
+                  disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
+                >
+                  {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
+                  {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
+                </option>
+              ))}
+          </select>
+        </label>
+        <p className="hint">
+          コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+        </p>
+        <button
+          className="primary wide"
+          onClick={confirmBuild}
+          disabled={
+            !state.legal.canBuildCity ||
+            !buildIntersectionId ||
+            !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
+          }
+        >
+          都市を建設
+        </button>
+      </section>
+
+      {state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
+        <section className="actions development-actions">
+          <h2>ターン終了時配置</h2>
+          {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
+          <div className="payment-grid">
+            <label>
+              色
+              <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
+                {cubeColors.map((color) => (
+                  <option key={color} value={color}>
+                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              エリア
+              <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
+                <option value="">選択</option>
+                {state.areas.map((area) => (
+                  <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
+                    {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button
+            className="primary wide"
+            onClick={() => endTurn(true)}
+            disabled={
+              !state.legal.canEndTurn ||
+              !endPlacementAreaId ||
+              !canPlaceSelectedArea ||
+              (currentPlayer?.cubes[endPlacementColor] ?? 0) < 1
+            }
+          >
+            1個置いて手番終了
+          </button>
+          <button className="secondary wide" onClick={() => endTurn(false)} disabled={!state.legal.canEndTurn}>
+            置かずに手番終了
+          </button>
+        </section>
+      ) : null}
+
+      {state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
+        <section className="actions development-actions">
+          <h2>三色都市の開発</h2>
+          <p className="hint">異なる2エリアへ最大1個ずつ配置できます。開発後、条件を満たせば赤青黄を1個ずつ得ます。</p>
+          <div className="payment-grid">
+            <label>
+              1個目 色
+              <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
+                {cubeColors.map((color) => (
+                  <option key={color} value={color}>
+                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              1個目 エリア
+              <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
+                <option value="">スキップ</option>
+                {state.areas.map((area) => (
+                  <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
+                    {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              2個目 色
+              <select value={secondPlacementColor} onChange={(event) => setSecondPlacementColor(event.target.value as CubeColor)}>
+                {cubeColors.map((color) => (
+                  <option key={color} value={color}>
+                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              2個目 エリア
+              <select value={secondPlacementAreaId} onChange={(event) => setSecondPlacementAreaId(event.target.value)}>
+                <option value="">スキップ</option>
+                {state.areas.map((area) => (
+                  <option
+                    key={area.id}
+                    value={area.id}
+                    disabled={!placeableAreaIds.includes(area.id) || area.id === endPlacementAreaId}
+                  >
+                    {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <button className="primary wide" onClick={endTricolorTurn} disabled={!state.legal.canEndTurn || !tricolorCanPlace}>
+            選択分を置いて手番終了
+          </button>
+          <button
+            className="secondary wide"
+            onClick={() => {
+              if (!state.currentPlayerId) return;
+              void sendAction({
+                type: "END_TURN",
+                playerId: state.currentPlayerId,
+                placements: [],
+              });
+            }}
+            disabled={!state.legal.canEndTurn}
+          >
+            すべてスキップして手番終了
+          </button>
+        </section>
+      ) : null}
+
+      {state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
+        <section className="actions development-actions">
+          <h2>中立開発</h2>
+          <p className="hint">対象エリア1つへ最大2個配置できます。開発後に中立なら隣接都市数だけ任意色を得ます。</p>
+          <label>
+            対象エリア
+            <select value={neutralDevelopmentAreaId} onChange={(event) => setNeutralDevelopmentAreaId(event.target.value)}>
+              <option value="">選択</option>
+              {state.areas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.label} {area.cubeTotal}/{endPlacementCapacity}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            配置数
+            <select value={neutralPlacementCount} onChange={(event) => setNeutralPlacementCount(Number(event.target.value))}>
+              {[0, 1, 2].map((count) => (
+                <option key={count} value={count}>
+                  {count}
+                </option>
+              ))}
+            </select>
+          </label>
+          {neutralPlacementCount >= 1 ? (
+            <label>
+              1個目 色
+              <select value={neutralFirstColor} onChange={(event) => setNeutralFirstColor(event.target.value as CubeColor)}>
+                {cubeColors.map((color) => (
+                  <option key={color} value={color}>
+                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {neutralPlacementCount >= 2 ? (
+            <label>
+              2個目 色
+              <select value={neutralSecondColor} onChange={(event) => setNeutralSecondColor(event.target.value as CubeColor)}>
+                {cubeColors.map((color) => (
+                  <option key={color} value={color}>
+                    {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <p className="hint">
+            現在色: {selectedNeutralDevelopmentArea ? areaColorLabels[selectedNeutralDevelopmentArea.areaColor] : "未選択"} /
+            中立で解決される場合の任意色取得上限 {neutralAdjacentCityPieces}個
+          </p>
+          {neutralAdjacentCityPieces > 0 ? (
+            <div className="payment-grid">
+              {cubeColors.map((color) => (
+                <label key={color}>
+                  {colorLabels[color]}取得
+                  <input
+                    type="number"
+                    min="0"
+                    max={neutralAdjacentCityPieces}
+                    value={neutralBonusCubes[color]}
+                    onChange={(event) => updateNeutralBonus(color, Number(event.target.value))}
+                  />
+                </label>
+              ))}
+            </div>
+          ) : null}
+          <button className="primary wide" onClick={endNeutralDevelopmentTurn} disabled={!state.legal.canEndTurn || !neutralCanPlace}>
+            中立開発を解決して手番終了
+          </button>
+        </section>
+      ) : null}
+    </aside>
+  ) : null;
+
   return (
     <main className={`app-shell focus-${guidance?.focus ?? "setup"}`}>
       <header className="topbar">
@@ -398,396 +769,48 @@ export const App = () => {
 
       <PlayerStrip players={state.players} currentPlayerId={state.currentPlayerId} />
 
-      <section className="workspace">
-        {guidance ? (
-          <GuidancePanel guidance={guidance}>
-            {state.phase === "action" && state.pendingWorldLevelBonus ? (
-              <div className="bonus-buttons guided-choice" aria-label="解禁ボーナス">
-                {cubeColors.map((color) => (
-                  <button
-                    key={color}
-                    className={`cube-choice ${color}`}
-                    onClick={() => claimWorldLevelBonus(color)}
-                    disabled={!state.legal.canClaimWorldLevelBonus}
-                  >
-                    {colorLabels[color]}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+      {error ? <p className="error scene-error">{error}</p> : null}
 
-            {state.phase === "action" && !state.turnCardUsed ? (
-              <>
-                {selectedCardForAction ? (
-                  <article className={`selected-action-card card-${selectedCardForAction.color}`}>
-                    <strong>{selectedCardForAction.name}</strong>
-                    <p>{useMode === "scoring" ? selectedCardForAction.scoringText : selectedCardForAction.actionText}</p>
-                  </article>
-                ) : null}
-                <div className="mode-tabs guided-modes" role="tablist" aria-label="カード用途">
-                  {availableUseModes.map((candidate) => (
-                    <button
-                      key={candidate}
-                      className={useMode === candidate ? "selected" : ""}
-                      onClick={() => setUseMode(candidate)}
-                      disabled={state.turnCardUsed || !selectedCardForAction}
-                    >
-                      {candidate === "production"
-                        ? selectedCardForAction?.color === "multi" ? "行動" : "生産"
-                        : modeLabels[candidate]}
-                    </button>
-                  ))}
-                </div>
-
-                {useMode === "basic" ? (
-                  <label className="guided-field">
-                    取得色
-                    <select value={basicColor} onChange={(event) => setBasicColor(event.target.value as CubeColor)}>
-                      {cubeColors.map((color) => (
-                        <option key={color} value={color}>
-                          {colorLabels[color]}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                ) : null}
-
-                <button className="primary guide-primary" onClick={confirmUseCard} disabled={!state.legal.canUseCard || !selectedCardForAction}>
-                  カードを使用
-                </button>
-              </>
-            ) : null}
-          </GuidancePanel>
-        ) : null}
-
-        <aside className="card-panel" aria-label="カード選択">
-          {state.phase === "draft" ? (
-            <section className="actions card-actions">
-              <h2>ドラフト {state.draftPickNumber} / 8</h2>
-              <div className="card-list">
-                {state.legal.draftPack.map((card) => (
-                  <GameCard key={card.instanceId} card={card} onSelect={draftPick} />
-                ))}
-              </div>
-            </section>
-          ) : null}
-
-          {state.phase === "action" ? (
-            <section className="actions card-actions">
-              <h2>カード選択</h2>
-              {state.turnCardUsed ? (
-                <p className="hint">
-                  {state.pendingWorldLevelBonus
-                    ? "カード使用済み。解禁ボーナス選択後に手番を続けられます。"
-                    : "カード使用済み。都市建設後に手番終了できます。"}
-                </p>
-              ) : null}
-              <div className="card-list hand-card-list" aria-label="手札">
-                {currentPlayer?.handCards.map((card) => (
-                  <GameCard
-                    key={card.instanceId}
-                    card={card}
-                    density="compact"
-                    selected={card.instanceId === selectedCardId}
-                    disabled={state.turnCardUsed}
-                    onSelect={(nextCard) => setSelectedCardId(nextCard.instanceId)}
-                  />
-                ))}
-              </div>
-            </section>
-          ) : null}
-        </aside>
-
-        <aside className="operations-panel" aria-label="都市建設・エリア開発">
-          {state.phase === "action" ? (
-            <section className="actions city-build-actions">
-              <h2>都市建設</h2>
-              <label>
-                交点
-                <select value={buildIntersectionId} onChange={(event) => setBuildIntersectionId(event.target.value)}>
-                  <option value="">選択</option>
-                  {state.intersections
-                    .map((intersection) => (
-                      <option
-                        key={intersection.id}
-                        value={intersection.id}
-                        disabled={!state.legal.buildableIntersectionIds.includes(intersection.id)}
-                      >
-                        {intersection.id} Lv{Math.min(intersection.cityStack.length + 1, 3)}
-                        {intersection.cityStack.length > 0 ? ` (${intersection.cityStack.map((city) => `Lv${city.level}`).join("/")})` : ""}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              <p className="hint">
-                コスト: {selectedBuildLevel ? `赤${selectedBuildLevel} 青${selectedBuildLevel} 黄${selectedBuildLevel}` : "交点を選択"}。カードは消費しません。
+      {isResultScene ? (
+        <section className="game-scene result-scene">
+          {guidanceControls}
+          <section className="results">
+            <h2>結果</h2>
+            <p>勝者: {state.winners.map((winner) => winner.name).join(", ")}</p>
+            {state.players.map((player) => (
+              <p key={player.id}>
+                {player.name}: 貢献 {player.contribution} + 都市 {player.cityCount} = {player.finalScore}
               </p>
-              <button
-                className="primary wide"
-                onClick={confirmBuild}
-                disabled={
-                  !state.legal.canBuildCity ||
-                  !buildIntersectionId ||
-                  !state.legal.buildableIntersectionIds.includes(buildIntersectionId)
-                }
-              >
-                都市を建設
-              </button>
-            </section>
-          ) : null}
-
-          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && !turnEndDevelopment ? (
-            <section className="actions development-actions">
-              <h2>ターン終了時配置</h2>
-              {turnEndProductionText ? <p className="hint">{turnEndProductionText}</p> : null}
-              <div className="payment-grid">
-                <label>
-                  色
-                  <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
-                    {cubeColors.map((color) => (
-                      <option key={color} value={color}>
-                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  エリア
-                  <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
-                    <option value="">選択</option>
-                    {state.areas.map((area) => (
-                      <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
-                        {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <button
-                className="primary wide"
-                onClick={() => endTurn(true)}
-                disabled={
-                  !state.legal.canEndTurn ||
-                  !endPlacementAreaId ||
-                  !canPlaceSelectedArea ||
-                  (currentPlayer?.cubes[endPlacementColor] ?? 0) < 1
-                }
-              >
-                1個置いて手番終了
-              </button>
-              <button className="secondary wide" onClick={() => endTurn(false)} disabled={!state.legal.canEndTurn}>
-                置かずに手番終了
-              </button>
-            </section>
-          ) : null}
-
-          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "tricolor-city" ? (
-            <section className="actions development-actions">
-              <h2>三色都市の開発</h2>
-              <p className="hint">異なる2エリアへ最大1個ずつ配置できます。開発後、条件を満たせば赤青黄を1個ずつ得ます。</p>
-              <div className="payment-grid">
-                <label>
-                  1個目 色
-                  <select value={endPlacementColor} onChange={(event) => setEndPlacementColor(event.target.value as CubeColor)}>
-                    {cubeColors.map((color) => (
-                      <option key={color} value={color}>
-                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  1個目 エリア
-                  <select value={endPlacementAreaId} onChange={(event) => setEndPlacementAreaId(event.target.value)}>
-                    <option value="">スキップ</option>
-                    {state.areas.map((area) => (
-                      <option key={area.id} value={area.id} disabled={!placeableAreaIds.includes(area.id)}>
-                        {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  2個目 色
-                  <select value={secondPlacementColor} onChange={(event) => setSecondPlacementColor(event.target.value as CubeColor)}>
-                    {cubeColors.map((color) => (
-                      <option key={color} value={color}>
-                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  2個目 エリア
-                  <select value={secondPlacementAreaId} onChange={(event) => setSecondPlacementAreaId(event.target.value)}>
-                    <option value="">スキップ</option>
-                    {state.areas.map((area) => (
-                      <option
-                        key={area.id}
-                        value={area.id}
-                        disabled={!placeableAreaIds.includes(area.id) || area.id === endPlacementAreaId}
-                      >
-                        {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <button className="primary wide" onClick={endTricolorTurn} disabled={!state.legal.canEndTurn || !tricolorCanPlace}>
-                選択分を置いて手番終了
-              </button>
-              <button
-                className="secondary wide"
-                onClick={() => {
-                  if (!state.currentPlayerId) return;
-                  void sendAction({
-                    type: "END_TURN",
-                    playerId: state.currentPlayerId,
-                    placements: [],
-                  });
-                }}
-                disabled={!state.legal.canEndTurn}
-              >
-                すべてスキップして手番終了
-              </button>
-            </section>
-          ) : null}
-
-          {state.phase === "action" && state.turnCardUsed && !state.pendingWorldLevelBonus && turnEndDevelopment?.type === "neutral-development" ? (
-            <section className="actions development-actions">
-              <h2>中立開発</h2>
-              <p className="hint">対象エリア1つへ最大2個配置できます。開発後に中立なら隣接都市数だけ任意色を得ます。</p>
-              <label>
-                対象エリア
-                <select value={neutralDevelopmentAreaId} onChange={(event) => setNeutralDevelopmentAreaId(event.target.value)}>
-                  <option value="">選択</option>
-                  {state.areas.map((area) => (
-                    <option key={area.id} value={area.id}>
-                      {area.label} {area.cubeTotal}/{endPlacementCapacity}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                配置数
-                <select value={neutralPlacementCount} onChange={(event) => setNeutralPlacementCount(Number(event.target.value))}>
-                  {[0, 1, 2].map((count) => (
-                    <option key={count} value={count}>
-                      {count}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {neutralPlacementCount >= 1 ? (
-                <label>
-                  1個目 色
-                  <select value={neutralFirstColor} onChange={(event) => setNeutralFirstColor(event.target.value as CubeColor)}>
-                    {cubeColors.map((color) => (
-                      <option key={color} value={color}>
-                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              {neutralPlacementCount >= 2 ? (
-                <label>
-                  2個目 色
-                  <select value={neutralSecondColor} onChange={(event) => setNeutralSecondColor(event.target.value as CubeColor)}>
-                    {cubeColors.map((color) => (
-                      <option key={color} value={color}>
-                        {colorLabels[color]} {currentPlayer?.cubes[color] ?? 0}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : null}
-              <p className="hint">
-                現在色: {selectedNeutralDevelopmentArea ? areaColorLabels[selectedNeutralDevelopmentArea.areaColor] : "未選択"} /
-                中立で解決される場合の任意色取得上限 {neutralAdjacentCityPieces}個
-              </p>
-              {neutralAdjacentCityPieces > 0 ? (
-                <div className="payment-grid">
-                  {cubeColors.map((color) => (
-                    <label key={color}>
-                      {colorLabels[color]}取得
-                      <input
-                        type="number"
-                        min="0"
-                        max={neutralAdjacentCityPieces}
-                        value={neutralBonusCubes[color]}
-                        onChange={(event) => updateNeutralBonus(color, Number(event.target.value))}
-                      />
-                    </label>
-                  ))}
-                </div>
-              ) : null}
-              <button className="primary wide" onClick={endNeutralDevelopmentTurn} disabled={!state.legal.canEndTurn || !neutralCanPlace}>
-                中立開発を解決して手番終了
-              </button>
-            </section>
-          ) : null}
-
-          {error ? <p className="error">{error}</p> : null}
-        </aside>
-
-        <Board
-          state={state}
-          selectedAreaId={turnEndDevelopment?.type === "neutral-development" ? neutralDevelopmentAreaId : endPlacementAreaId}
-          selectedIntersectionId={buildIntersectionId}
-          placeableAreaIds={
-            turnEndDevelopment?.type === "neutral-development"
-              ? state.areas.map((area) => area.id)
-              : placeableAreaIds
-          }
-          buildableIntersectionIds={state.legal.buildableIntersectionIds}
-          onAreaSelect={
-            turnEndDevelopment?.type === "neutral-development"
-              ? setNeutralDevelopmentAreaId
-              : setEndPlacementAreaId
-          }
-          onIntersectionSelect={setBuildIntersectionId}
-        />
-
-        <aside className="right-panel">
-          {state.status === "ended" ? (
-            <section className="results">
-              <h2>結果</h2>
-              <p>勝者: {state.winners.map((winner) => winner.name).join(", ")}</p>
-              {state.players.map((player) => (
-                <p key={player.id}>
-                  {player.name}: 貢献 {player.contribution} + 都市 {player.cityCount} = {player.finalScore}
-                </p>
-              ))}
-            </section>
-          ) : null}
-          <section className="history latest-history" aria-label="最新イベント">
-            <h2>最新イベント</h2>
-            {latestHistory ? (
-              <article>
-                <strong>R{latestHistory.round} {latestHistory.playerName}</strong>
-                <span>{latestHistory.summary}</span>
-              </article>
-            ) : latestUnlock ? (
-              <article>
-                <strong>{latestUnlock.playerName}</strong>
-                <span>世界Lv{latestUnlock.level}を解禁しました</span>
-                {latestUnlock.bonusColor ? <span>ボーナス: {colorLabels[latestUnlock.bonusColor]}</span> : null}
-              </article>
-            ) : <p>なし</p>}
-          </section>
-          <details className="history history-drawer">
-            <summary>行動履歴を開く</summary>
-            {olderHistory.length === 0 ? <p>なし</p> : null}
-            {olderHistory.map((entry) => (
-              <article key={entry.id}>
-                <strong>R{entry.round} {entry.playerName}</strong>
-                <span>{entry.summary}</span>
-              </article>
             ))}
-          </details>
-        </aside>
-      </section>
+          </section>
+          <aside className="right-panel table-log">
+            {latestEvent}
+            {historyDrawer}
+          </aside>
+        </section>
+      ) : isDraftScene ? (
+        <section className="game-scene draft-scene">
+          {guidanceControls}
+          {draftCards}
+          <aside className="right-panel table-log">
+            {latestEvent}
+            {historyDrawer}
+          </aside>
+        </section>
+      ) : (
+        <section className="game-scene board-scene">
+          {board}
+          <div className="board-hud">
+            {guidanceControls}
+          </div>
+          {operations}
+          {handCards}
+          <aside className="right-panel table-log">
+            {latestEvent}
+            {historyDrawer}
+          </aside>
+        </section>
+      )}
     </main>
   );
 };

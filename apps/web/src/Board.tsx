@@ -39,7 +39,7 @@ export const Board = ({
   const [zoom, setZoom] = useState(1);
   const xCoordinates = [...state.areas.map((area) => area.x), ...state.intersections.map((item) => item.x)];
   const yCoordinates = [...state.areas.map((area) => area.y), ...state.intersections.map((item) => item.y)];
-  const boardPadding = 70;
+  const boardPadding = 42;
   const minX = Math.min(...xCoordinates) - boardPadding;
   const maxX = Math.max(...xCoordinates) + boardPadding;
   const minY = Math.min(...yCoordinates) - boardPadding;
