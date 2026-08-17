@@ -115,12 +115,12 @@ export const deriveGameGuidance = ({
       focus: "mode",
       eyebrow: `Round ${state.round} / ${state.currentPlayerName ?? "手番"}`,
       title: "カードの用途を選んでください",
-      detail: `${selectedCard.name}を${modeLabels[useMode]}として使う準備ができています。用途を選び、カード使用ボタンで確定します。`,
-      required: ["用途を選択", "カードを使用"],
+      detail: `${selectedCard.name}を使えます。手札の下に出た用途ボタンを直接押すとカードを使用します。`,
+      required: [`${modeLabels[useMode]}など用途を直接選択`],
       optional: state.legal.canBuildCity
-        ? [buildIntersectionId ? `任意都市建設: ${buildIntersectionId}を選択中` : "任意都市建設: 盤面の光る交点を選択できます"]
+        ? [buildIntersectionId ? `任意都市建設: ${buildIntersectionId}を処理中` : "任意都市建設: 盤面の光る交点をクリックできます"]
         : [],
-      target: "カード用途 / カードを使用",
+      target: "手札下の用途ボタン",
     };
   }
 
@@ -153,8 +153,8 @@ export const deriveGameGuidance = ({
     focus: "area",
     eyebrow: "カード使用後の手番終了",
     title: selectedAreaId ? "選択したエリアへ置いて手番終了できます" : "キューブを置くエリアを選んでください",
-    detail: "カード使用後です。光るHEXへ1個置くか、置かずに手番を終了します。",
-    required: ["光るHEXを選ぶ", "1個置いて手番終了"],
+    detail: "カード使用後です。光るHEXをクリックすると1個置いて手番を終了します。",
+    required: ["光るHEXをクリック"],
     optional: state.legal.canBuildCity
       ? ["置かずに手番終了できます", buildIntersectionId ? `任意都市建設: ${buildIntersectionId}を選択中` : "都市建設も任意で可能"]
       : ["置かずに手番終了できます"],

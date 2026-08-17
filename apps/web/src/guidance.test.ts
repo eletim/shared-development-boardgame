@@ -92,8 +92,8 @@ describe("deriveGameGuidance", () => {
 
     const result = guidance(actionState, { selectedCard: card, useMode: "scoring" });
     expect(result.focus).toBe("mode");
-    expect(result.required).toEqual(["用途を選択", "カードを使用"]);
-    expect(result.detail).toContain("得点");
+    expect(result.required).toEqual(["得点など用途を直接選択"]);
+    expect(result.detail).toContain("用途ボタンを直接押す");
   });
 
   it("points card-used turns toward board placement and optional skip", () => {
