@@ -1,5 +1,5 @@
 import { Children, useEffect, useState, type ReactNode } from "react";
-import { RotateCcw, Undo2, UserPlus } from "lucide-react";
+import { Building2, RotateCcw, Star, Undo2, UserPlus } from "lucide-react";
 import {
   cubeColors,
   type AreaColor,
@@ -475,10 +475,21 @@ export const App = () => {
             style={{ borderColor: player.color }}
           >
             <strong>{player.name}</strong>
-            <span>貢献 {player.contribution}</span>
-            <span>都市 {player.cityCount}</span>
-            <span className="hud-cubes">
-              R{player.cubes.red} B{player.cubes.blue} Y{player.cubes.yellow}
+            <span className="hud-stat">
+              <Star size={13} aria-hidden="true" />
+              {player.contribution}
+            </span>
+            <span className="hud-stat">
+              <Building2 size={13} aria-hidden="true" />
+              {player.cityCount}
+            </span>
+            <span className="hud-cubes" aria-label={`キューブ 赤${player.cubes.red} 青${player.cubes.blue} 黄${player.cubes.yellow}`}>
+              {cubeColors.map((color) => (
+                <span key={color} className={`hud-cube ${color}`} aria-label={`${colorLabels[color]} ${player.cubes[color]}`}>
+                  <span className="hud-cube-piece" aria-hidden="true" />
+                  <span>{player.cubes[color]}</span>
+                </span>
+              ))}
             </span>
           </article>
         ))}

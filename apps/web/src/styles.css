@@ -401,8 +401,48 @@ select {
   white-space: nowrap;
 }
 
+.hud-stat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #efe5d0;
+}
+
 .hud-cubes {
-  color: #f3d778;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.hud-cube {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 31px;
+  color: #efe5d0;
+  font-weight: 900;
+}
+
+.hud-cube-piece {
+  width: 13px;
+  height: 13px;
+  display: inline-block;
+  border-radius: 3px;
+  border: 1px solid #00000085;
+  box-shadow: inset 2px 2px 0 #ffffff40, inset -2px -2px 0 #00000030, 0 2px 4px #00000055;
+  transform: rotate(45deg);
+}
+
+.hud-cube.red .hud-cube-piece {
+  background: var(--red);
+}
+
+.hud-cube.blue .hud-cube-piece {
+  background: var(--blue);
+}
+
+.hud-cube.yellow .hud-cube-piece {
+  background: var(--yellow);
 }
 
 .hud-tools {
@@ -1308,131 +1348,260 @@ select {
 }
 
 .play-shell .board-scene .board-viewport svg {
-  min-width: 90%;
-  min-height: 90%;
+  min-width: 84%;
+  min-height: 84%;
+}
+
+.area-cell {
+  cursor: default;
 }
 
 .hex {
-  fill: #343b36;
+  fill: url("#hex-neutral");
   stroke: #b4a487;
-  stroke-width: 2;
-  filter: drop-shadow(0 8px 8px #00000065);
+  stroke-width: 2.4;
+  filter: drop-shadow(0 9px 8px #00000075);
 }
 
 .hex.red {
-  fill: #9f5a50;
+  fill: url("#hex-red");
 }
 
 .hex.blue {
-  fill: #4f779b;
+  fill: url("#hex-blue");
 }
 
 .hex.yellow {
-  fill: #a58b4b;
+  fill: url("#hex-yellow");
 }
 
 .hex.neutral {
-  fill: #68675c;
+  fill: url("#hex-neutral");
+}
+
+.hex-grain {
+  fill: url("#hex-grain");
+  stroke: none;
+  pointer-events: none;
 }
 
 .hex.selectable {
   cursor: pointer;
   stroke: #f3d778;
-  stroke-dasharray: 7 5;
-  stroke-width: 4;
+  stroke-dasharray: 9 6;
+  stroke-width: 4.2;
+  filter: drop-shadow(0 0 11px #f3d77875) drop-shadow(0 9px 8px #00000075);
 }
 
 .hex.selected {
   stroke: #ffffff;
   stroke-dasharray: none;
-  stroke-width: 6;
+  stroke-width: 5.5;
+  filter: drop-shadow(0 0 16px #ffffff80) drop-shadow(0 9px 8px #00000075);
 }
 
-.area-label,
-.area-count {
+.area-name,
+.area-level-badge text,
+.cube-multiplier {
   text-anchor: middle;
   font-weight: 900;
-  fill: #080807;
+  fill: #14130f;
   paint-order: stroke;
   stroke: #f1e6d2;
-  stroke-width: 4px;
+  stroke-width: 3px;
   stroke-linejoin: round;
   pointer-events: none;
 }
 
-.area-label {
-  font-size: 19px;
+.area-name {
+  font-size: 14px;
+  opacity: 0.82;
 }
 
-.area-count {
-  font-size: 16px;
+.area-level-badge {
+  pointer-events: none;
 }
 
-.cube-icon {
-  stroke: #1f1b16;
-  stroke-width: 2;
+.area-level-badge circle {
+  fill: #f1e6d2;
+  stroke: #3a3021;
+  stroke-width: 1.6;
   filter: drop-shadow(0 3px 3px #00000070);
 }
 
-.cube-icon.red {
-  fill: var(--red);
+.area-level-badge text {
+  font-size: 10px;
+  stroke-width: 2px;
 }
 
-.cube-icon.blue {
-  fill: var(--blue);
-}
-
-.cube-icon.yellow {
-  fill: var(--yellow);
-}
-
-.cube-text {
-  text-anchor: middle;
-  font-weight: 900;
-  fill: #ffffff;
-  font-size: 14px;
+.level-notch {
+  fill: #110f0bcc;
+  stroke: #f1e6d244;
+  stroke-width: 1;
+  opacity: 0.62;
   pointer-events: none;
 }
 
-.cube-icon.yellow + .cube-text {
-  fill: #1f1b10;
+.level-notch.filled {
+  fill: #f3d778;
+  stroke: #4d3a12;
+  opacity: 0.95;
+  filter: drop-shadow(0 2px 2px #00000080);
 }
 
-.intersection circle {
-  fill: #ded8c9;
-  stroke: #332d22;
-  stroke-width: 2;
-  filter: drop-shadow(0 3px 3px #00000080);
-}
-
-.city-stack-block {
-  stroke: #221b13;
-  stroke-width: 1.5;
-  filter: drop-shadow(0 3px 3px #00000080);
-}
-
-.city-stack-text {
-  text-anchor: middle;
-  font-size: 9px;
-  font-weight: 900;
-  fill: #ffffff;
+.capacity-track {
   pointer-events: none;
+}
+
+.capacity-slot {
+  fill: #17130f99;
+  stroke: #f1e6d244;
+  stroke-width: 1;
+}
+
+.capacity-slot.filled {
+  fill: #f1e6d2;
+  stroke: #4a3820;
+}
+
+.cube-slot-empty rect {
+  fill: #0a0e0d45;
+  stroke: #f1e6d22b;
+  stroke-width: 1;
+  transform: rotate(45deg);
+}
+
+.cube-pile {
+  filter: drop-shadow(0 7px 5px #00000075);
+  pointer-events: none;
+}
+
+.cube-piece path {
+  stroke: #16110d;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.cube-piece.red .cube-top {
+  fill: #ff766a;
+}
+
+.cube-piece.red .cube-left {
+  fill: #c64035;
+}
+
+.cube-piece.red .cube-right {
+  fill: #8f2b27;
+}
+
+.cube-piece.blue .cube-top {
+  fill: #69abed;
+}
+
+.cube-piece.blue .cube-left {
+  fill: #2878d8;
+}
+
+.cube-piece.blue .cube-right {
+  fill: #1d4f90;
+}
+
+.cube-piece.yellow .cube-top {
+  fill: #ffd86b;
+}
+
+.cube-piece.yellow .cube-left {
+  fill: #d6a72d;
+}
+
+.cube-piece.yellow .cube-right {
+  fill: #8f6a1f;
+}
+
+.cube-multiplier {
+  font-size: 10px;
+  stroke-width: 2px;
+}
+
+.intersection {
+  cursor: default;
+}
+
+.intersection-socket,
+.city-foundation {
+  fill: #292820;
+  stroke: #d8ceb7;
+  stroke-width: 2.2;
+  filter: drop-shadow(0 4px 4px #00000085);
+}
+
+.intersection-socket {
+  fill: #625d50;
+}
+
+.city-foundation {
+  fill: #191d1b;
+  opacity: 0.96;
+}
+
+.buildable-ring {
+  fill: none;
+  stroke: #f3d778;
+  stroke-width: 4;
+  stroke-dasharray: 5 4;
+  filter: drop-shadow(0 0 7px #f3d778b0);
+}
+
+.city-piece {
+  filter: drop-shadow(0 7px 5px #00000080);
+  pointer-events: none;
+}
+
+.city-tier-top,
+.city-tier-body,
+.city-tier-base {
+  stroke: #18120e;
+  stroke-width: 1.4;
+  vector-effect: non-scaling-stroke;
+}
+
+.city-tier-top {
+  opacity: 1;
+}
+
+.city-tier-body {
+  opacity: 0.94;
+}
+
+.city-tier-base {
+  opacity: 0.78;
 }
 
 .intersection.selectable {
   cursor: pointer;
 }
 
-.intersection.selectable circle,
-.intersection.selectable .city-stack-block {
+.intersection.selectable .intersection-socket,
+.intersection.selectable .city-foundation,
+.intersection.selectable .city-tier-top,
+.intersection.selectable .city-tier-body,
+.intersection.selectable .city-tier-base {
   stroke: #f3d778;
+  stroke-width: 3;
+}
+
+.intersection.selected .intersection-socket,
+.intersection.selected .city-foundation,
+.intersection.selected .city-tier-top,
+.intersection.selected .city-tier-body,
+.intersection.selected .city-tier-base {
+  stroke: #ffffff;
   stroke-width: 4;
 }
 
-.intersection.selected circle,
-.intersection.selected .city-stack-block {
+.intersection.selected .buildable-ring {
   stroke: #ffffff;
-  stroke-width: 5;
+  filter: drop-shadow(0 0 10px #ffffffaa);
 }
 
 .history {

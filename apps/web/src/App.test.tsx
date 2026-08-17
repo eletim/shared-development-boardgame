@@ -570,7 +570,8 @@ describe("App", () => {
     mockFetch([placementState]);
     render(<App />);
 
-    expect(await screen.findByText("赤 Lv1 1/2")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/中央: 赤エリア、Lv1、キューブ 1\/2/)).toBeInTheDocument();
+    expect(screen.getByTestId("cube-pile-area-center-red")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
     await userEvent.click(screen.getByTestId("area-area-center"));
     expect(screen.getByTestId("area-area-center")).toHaveClass("hex", "red", "selectable");
@@ -602,7 +603,7 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<App />);
 
-    expect(await screen.findByText("赤 Lv1 1/2")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/中央: 赤エリア、Lv1、キューブ 1\/2/)).toBeInTheDocument();
 
     fetchMock.mockResolvedValueOnce({
       ok: true,
@@ -611,7 +612,7 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "青 1" }));
     await userEvent.click(screen.getByTestId("area-area-center"));
 
-    expect(await screen.findByText("中立 Lv1 2/2")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/中央: 中立エリア、Lv1、キューブ 2\/2/)).toBeInTheDocument();
     expect(screen.getByTestId("area-area-center")).toHaveClass("neutral");
     expect(screen.getByTestId("area-area-center")).not.toHaveClass("red");
   });
@@ -763,7 +764,7 @@ describe("App", () => {
     const developmentHeading = await screen.findByRole("heading", { name: "三色都市の開発" });
     const cityHeading = screen.getByRole("heading", { name: "都市建設" });
     expect(cityHeading.compareDocumentPosition(developmentHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText("黄 Lv1 1/2")).toBeInTheDocument();
+    expect(screen.getByLabelText(/中央: 黄エリア、Lv1、キューブ 1\/2/)).toBeInTheDocument();
     expect(screen.getByTestId("area-area-center")).toHaveClass("yellow", "selectable");
     await userEvent.click(screen.getByRole("button", { name: "盤面を拡大" }));
     await userEvent.click(screen.getByTestId("area-area-center"));
@@ -876,7 +877,7 @@ describe("App", () => {
     fullArea.legal.placeableAreaIds = [];
     mockFetch([fullArea]);
     const { unmount } = render(<App />);
-    expect(await screen.findByText("中立 Lv1 2/2")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/中央: 中立エリア、Lv1、キューブ 2\/2/)).toBeInTheDocument();
     expect(screen.getByTestId("area-area-center")).not.toHaveClass("selectable");
     unmount();
 
@@ -890,7 +891,7 @@ describe("App", () => {
     boundaryArea.legal.turnEndAreaCapacity = 4;
     mockFetch([boundaryArea]);
     render(<App />);
-    expect(await screen.findByText("中立 Lv1 2/2")).toBeInTheDocument();
+    expect(await screen.findByLabelText(/中央: 中立エリア、Lv1、キューブ 2\/2/)).toBeInTheDocument();
     expect(screen.getByTestId("area-area-center")).toHaveClass("selectable");
   });
 
