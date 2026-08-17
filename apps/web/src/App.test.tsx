@@ -313,14 +313,14 @@ describe("App", () => {
     mockAppAndSimulationFetch(baseState("action"));
     render(<App />);
 
-    expect(await screen.findByText(/Round 1 \/ 3/)).toBeInTheDocument();
+    expect(await screen.findByText(/Round 1\/3/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Simulation Viewer" }));
 
     expect(await screen.findByRole("heading", { name: "Simulation Viewer" })).toBeInTheDocument();
     expect(await screen.findByRole("cell", { name: "run-fixture" })).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "通常ゲームへ戻る" }));
-    expect(await screen.findByText(/Round 1 \/ 3/)).toBeInTheDocument();
+    expect(await screen.findByText(/Round 1\/3/)).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "カード選択" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Simulation Viewer" })).toHaveTextContent("Sim");
   });
@@ -330,16 +330,18 @@ describe("App", () => {
     render(<App />);
 
     const cardPanel = await screen.findByRole("complementary", { name: "カード選択" });
-    const operationsPanel = screen.getByRole("complementary", { name: "都市建設・エリア開発" });
+    const operationsPanel = screen.getByLabelText("都市建設・エリア開発");
     const cardSection = (await screen.findByRole("heading", { name: "手札" })).closest("section");
     const citySection = screen.getByRole("heading", { name: "都市建設" }).closest("section");
     const developmentSection = screen.getByRole("heading", { name: "ターン終了時配置" }).closest("section");
 
     expect(screen.queryByRole("heading", { name: "都市生産" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "都市建設・エリア開発" })).not.toBeInTheDocument();
     expect(within(cardPanel).queryByRole("heading", { name: "都市建設" })).not.toBeInTheDocument();
     expect(within(cardPanel).queryByRole("heading", { name: "ターン終了時配置" })).not.toBeInTheDocument();
     expect(within(operationsPanel).getByRole("heading", { name: "都市建設" })).toBeInTheDocument();
     expect(within(operationsPanel).getByRole("heading", { name: "ターン終了時配置" })).toBeInTheDocument();
+    expect(operationsPanel).toHaveClass("context-action-strip");
     expect(cardSection).toHaveClass("card-actions");
     expect(citySection).toHaveClass("city-build-actions");
     expect(developmentSection).toHaveClass("development-actions");
@@ -359,7 +361,7 @@ describe("App", () => {
     mockFetch([state]);
     render(<App />);
 
-    expect(await screen.findByText("ラウンド2開始。都市生産: A 赤1")).toBeInTheDocument();
+    expect((await screen.findAllByText("ラウンド2開始。都市生産: A 赤1")).length).toBeGreaterThan(0);
     expect(screen.queryByRole("heading", { name: "都市生産" })).not.toBeInTheDocument();
     expect(screen.queryByText("A なし")).not.toBeInTheDocument();
     expect(screen.queryByText("B なし")).not.toBeInTheDocument();
@@ -401,7 +403,7 @@ describe("App", () => {
 
     const boardSvg = await screen.findByTestId("board-svg");
     const cardPanel = screen.getByRole("complementary", { name: "カード選択" });
-    const operationsPanel = screen.getByRole("complementary", { name: "都市建設・エリア開発" });
+    const operationsPanel = screen.getByLabelText("都市建設・エリア開発");
     const zoomOut = screen.getByRole("button", { name: "盤面を縮小" });
     const zoomReset = screen.getByRole("button", { name: "盤面を100%に戻す" });
     const zoomIn = screen.getByRole("button", { name: "盤面を拡大" });
@@ -660,7 +662,7 @@ describe("App", () => {
       json: async () => ({ state: pendingBonus }),
     });
     await userEvent.click(screen.getByRole("button", { name: "得点" }));
-    expect(await screen.findByText("世界Lv2を解禁しました")).toBeInTheDocument();
+    expect(await screen.findByText("世界Lv2 解禁")).toBeInTheDocument();
     expect(screen.getByTestId("intersection-intersection-01")).not.toHaveClass("selectable");
 
     fetchMock.mockResolvedValueOnce({
@@ -679,7 +681,8 @@ describe("App", () => {
   it("does not allow board clicks for intersections omitted from server legal moves", async () => {
     mockFetch([withBuildableIntersections(baseState("action", true), [])]);
     render(<App />);
-    await screen.findByRole("heading", { name: "都市建設" });
+    expect(await screen.findByLabelText("都市建設・エリア開発")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "都市建設" })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByTestId("intersection-intersection-01"));
     expect(screen.getByTestId("intersection-intersection-01")).not.toHaveClass("selectable");
@@ -856,8 +859,8 @@ describe("App", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<App />);
-    expect(await screen.findByText(/世界Lv2 \/ 次の解禁: 45点 \/ 現在最高: 15点/)).toBeInTheDocument();
-    expect(screen.getByText("世界Lv2を解禁しました")).toBeInTheDocument();
+    expect(await screen.findByText(/Round 1\/3 · WORLD Lv2/)).toBeInTheDocument();
+    expect(screen.getByText("世界Lv2 解禁")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "青" }));
     expect(lastRequestBody(fetchMock)).toContain("CLAIM_WORLD_LEVEL_BONUS");
