@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { cubeColors, type AreaColor, type PublicGameState } from "@sdb/protocol";
+import { cubeColors, type AreaColor, type CubeColor, type PublicGameState } from "@sdb/protocol";
 
 type BoardState = Pick<PublicGameState, "status" | "areas" | "intersections" | "areaCapacity">;
 
@@ -16,6 +16,92 @@ const boardZoomStep = 0.25;
 
 const clampBoardZoom = (value: number) =>
   Math.min(maxBoardZoom, Math.max(minBoardZoom, value));
+
+const cubeColorLabels: Record<CubeColor, string> = {
+  red: "赤",
+  blue: "青",
+  yellow: "黄",
+};
+
+const cubeOffsets = [
+  { x: 0, y: 0 },
+  { x: -8, y: -8 },
+  { x: 8, y: -16 },
+];
+
+const renderCubePiece = (color: CubeColor, x: number, y: number, key: string) => (
+  <g key={key} className={`cube-piece ${color}`} transform={`translate(${x} ${y})`}>
+    <path className="cube-top" d="M 0 -14 L 13 -7 L 0 0 L -13 -7 Z" />
+    <path className="cube-left" d="M -13 -7 L 0 0 L 0 15 L -13 8 Z" />
+    <path className="cube-right" d="M 13 -7 L 0 0 L 0 15 L 13 8 Z" />
+  </g>
+);
+
+const renderCubePile = (areaId: string, color: CubeColor, count: number, x: number, y: number) => {
+  if (count === 0) {
+    return (
+      <g key={color} className="cube-slot-empty" transform={`translate(${x} ${y})`} aria-hidden="true">
+        <rect x="-11" y="-7" width="22" height="14" rx="3" />
+      </g>
+    );
+  }
+
+  const visibleCount = Math.min(count, cubeOffsets.length);
+  return (
+    <g
+      key={color}
+      className={`cube-pile ${color}`}
+      data-testid={`cube-pile-${areaId}-${color}`}
+      aria-label={`${cubeColorLabels[color]}キューブ ${count}個`}
+      transform={`translate(${x} ${y})`}
+    >
+      {Array.from({ length: visibleCount }, (_, index) =>
+        renderCubePiece(color, cubeOffsets[index].x, cubeOffsets[index].y, `${color}-${index}`)
+      )}
+      {count > visibleCount ? (
+        <text className="cube-multiplier" x="17" y="-13">
+          x{count}
+        </text>
+      ) : null}
+    </g>
+  );
+};
+
+const renderDevelopmentNotches = (level: number, x: number, y: number) =>
+  Array.from({ length: 3 }, (_, index) => (
+    <rect
+      key={index}
+      className={`level-notch ${index < level ? "filled" : ""}`}
+      x={x - 20 + index * 15}
+      y={y}
+      width="10"
+      height={index < level ? 22 : 10}
+      rx="2"
+    />
+  ));
+
+const renderCityPiece = (
+  city: PublicGameState["intersections"][number]["cityStack"][number],
+  x: number,
+  y: number,
+  key: string
+) => (
+  <g
+    key={key}
+    className={`city-piece level-${city.level}`}
+    data-testid={key}
+    aria-label={`${city.playerId}のLv${city.level}都市`}
+    transform={`translate(${x} ${y})`}
+  >
+    {Array.from({ length: city.level }, (_, tier) => (
+      <g key={tier} transform={`translate(0 ${-tier * 8})`}>
+        <ellipse className="city-tier-top" cx="0" cy="-8" rx="16" ry="5" fill={city.playerColor} />
+        <rect className="city-tier-body" x="-16" y="-8" width="32" height="12" rx="3" fill={city.playerColor} />
+        <ellipse className="city-tier-base" cx="0" cy="4" rx="16" ry="5" fill={city.playerColor} />
+      </g>
+    ))}
+  </g>
+);
 
 export const Board = ({
   state,
@@ -39,10 +125,11 @@ export const Board = ({
   const [zoom, setZoom] = useState(1);
   const xCoordinates = [...state.areas.map((area) => area.x), ...state.intersections.map((item) => item.x)];
   const yCoordinates = [...state.areas.map((area) => area.y), ...state.intersections.map((item) => item.y)];
-  const minX = Math.min(...xCoordinates) - 130;
-  const maxX = Math.max(...xCoordinates) + 130;
-  const minY = Math.min(...yCoordinates) - 130;
-  const maxY = Math.max(...yCoordinates) + 130;
+  const boardPadding = 98;
+  const minX = Math.min(...xCoordinates) - boardPadding;
+  const maxX = Math.max(...xCoordinates) + boardPadding;
+  const minY = Math.min(...yCoordinates) - boardPadding;
+  const maxY = Math.max(...yCoordinates) + boardPadding;
   const zoomPercent = Math.round(zoom * 100);
 
   return (
@@ -85,6 +172,27 @@ export const Board = ({
           aria-label="六角形盤面"
           style={{ width: `${zoom * 100}%`, height: `${zoom * 100}%` }}
         >
+          <defs>
+            <linearGradient id="hex-red" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#c96b60" />
+              <stop offset="100%" stopColor="#7e332e" />
+            </linearGradient>
+            <linearGradient id="hex-blue" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#6396c4" />
+              <stop offset="100%" stopColor="#244e75" />
+            </linearGradient>
+            <linearGradient id="hex-yellow" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#d7b75a" />
+              <stop offset="100%" stopColor="#816a2c" />
+            </linearGradient>
+            <linearGradient id="hex-neutral" x1="0" x2="1" y1="0" y2="1">
+              <stop offset="0%" stopColor="#858276" />
+              <stop offset="100%" stopColor="#484940" />
+            </linearGradient>
+            <pattern id="hex-grain" width="18" height="18" patternUnits="userSpaceOnUse">
+              <path d="M 0 8 H 18 M 8 0 V 18" stroke="#ffffff" strokeOpacity="0.06" strokeWidth="1" />
+            </pattern>
+          </defs>
           {state.areas.map((area) => {
             const points = Array.from({ length: 6 }, (_, index) => {
               const angle = ((30 + index * 60) * Math.PI) / 180;
@@ -92,28 +200,44 @@ export const Board = ({
             }).join(" ");
             const selectable =
               interactive && state.status === "active" && placeableAreaIds.includes(area.id);
+            const areaSummary =
+              `${area.label}: ${areaColorLabels[area.areaColor]}エリア、Lv${area.areaLevel}、` +
+              `キューブ ${area.cubeTotal}/${state.areaCapacity}、` +
+              cubeColors.map((color) => `${cubeColorLabels[color]}${area.cubes[color]}`).join(" ");
             return (
-              <g key={area.id}>
+              <g key={area.id} className="area-cell" aria-label={areaSummary}>
                 <polygon
                   points={points}
                   data-testid={`area-${area.id}`}
                   className={`hex ${area.areaColor} ${selectable ? "selectable" : ""} ${selectedAreaId === area.id ? "selected" : ""}`}
                   onClick={() => selectable && onAreaSelect(area.id)}
                 />
-                <text x={area.x} y={area.y - 36} className="area-label">
+                <polygon points={points} className="hex-grain" aria-hidden="true" />
+                {renderDevelopmentNotches(area.areaLevel, area.x, area.y - 61)}
+                <g className="area-level-badge" transform={`translate(${area.x + 47} ${area.y - 51})`}>
+                  <circle r="12" />
+                  <text y="3">{area.areaLevel}</text>
+                </g>
+                <g className="capacity-track" aria-label={`容量 ${area.cubeTotal}/${state.areaCapacity}`}>
+                  {Array.from({ length: state.areaCapacity }, (_, index) => (
+                    <rect
+                      key={index}
+                      className={`capacity-slot ${index < area.cubeTotal ? "filled" : ""}`}
+                      x={area.x - (state.areaCapacity * 14) / 2 + index * 14}
+                      y={area.y + 52}
+                      width="10"
+                      height="6"
+                      rx="2"
+                    />
+                  ))}
+                </g>
+                <text x={area.x} y={area.y + 72} className="area-name">
                   {area.label}
                 </text>
-                <text x={area.x} y={area.y - 13} className="area-count">
-                  {areaColorLabels[area.areaColor]} Lv{area.areaLevel} {area.cubeTotal}/{state.areaCapacity}
-                </text>
-                {cubeColors.map((color, index) => (
-                  <g key={color} transform={`translate(${area.x - 38 + index * 38} ${area.y + 24})`}>
-                    <rect className={`cube-icon ${color}`} x="-13" y="-13" width="26" height="26" rx="4" />
-                    <text className="cube-text" y="5">
-                      {area.cubes[color]}
-                    </text>
-                  </g>
-                ))}
+                {cubeColors.map((color, index) =>
+                  renderCubePile(area.id, color, area.cubes[color], area.x - 34 + index * 34, area.y + 12)
+                )}
+                <title>{areaSummary}</title>
               </g>
             );
           })}
@@ -128,19 +252,31 @@ export const Board = ({
                 key={intersection.id}
                 data-testid={`intersection-${intersection.id}`}
                 className={`intersection ${selectable ? "selectable" : ""} ${selectedIntersectionId === intersection.id ? "selected" : ""}`}
+                aria-label={`${intersection.id}: ${stackLabel}`}
                 onClick={() => selectable && onIntersectionSelect(intersection.id)}
               >
                 {intersection.cityStack.length === 0 ? (
-                  <circle cx={intersection.x} cy={intersection.y} r={legalBuild ? 10 : 7} fill="#ffffff" />
+                  <>
+                    <circle className="intersection-socket" cx={intersection.x} cy={intersection.y} r={legalBuild ? 13 : 9} />
+                    {legalBuild ? (
+                      <circle className="buildable-ring" cx={intersection.x} cy={intersection.y} r="21" />
+                    ) : null}
+                  </>
                 ) : (
-                  intersection.cityStack.map((city, index) => (
-                    <g key={`${intersection.id}-${index}-${city.playerId}`} transform={`translate(${intersection.x} ${intersection.y - index * 14})`}>
-                      <rect className="city-stack-block" x="-13" y="-8" width="26" height="14" rx="2" fill={city.playerColor} />
-                      <text className="city-stack-text" y="3">
-                        L{city.level}
-                      </text>
-                    </g>
-                  ))
+                  <>
+                    <circle className="city-foundation" cx={intersection.x} cy={intersection.y + 4} r="22" />
+                    {legalBuild ? (
+                      <circle className="buildable-ring" cx={intersection.x} cy={intersection.y} r="25" />
+                    ) : null}
+                    {intersection.cityStack.map((city, index) =>
+                      renderCityPiece(
+                        city,
+                        intersection.x - (intersection.cityStack.length - 1) * 9 + index * 18,
+                        intersection.y - index * 12,
+                        `city-${intersection.id}-${index}`
+                      )
+                    )}
+                  </>
                 )}
                 <title>{intersection.id}: {stackLabel}</title>
               </g>
